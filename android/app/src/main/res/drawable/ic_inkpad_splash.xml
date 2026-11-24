@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash icon: the pen stroke on Inkpad's indigo, as a circle -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:left="18dp" android:top="18dp" android:right="18dp" android:bottom="18dp">
+        <shape android:shape="oval"><solid android:color="@color/ic_launcher_background" /></shape>
+    </item>
+    <item android:drawable="@drawable/ic_inkpad_foreground" />
+</layer-list>

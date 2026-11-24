@@ -1,0 +1,11 @@
+{
+  "appId": "app.inkpad.notes",
+  "appName": "Inkpad",
+  "webDir": "www",
+  "ios": {
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "contentInset": "never",
+    "backgroundColor": "#f6f4ef"
+  }
+}

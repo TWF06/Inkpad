@@ -1,0 +1,15 @@
+# dependencies (npm install)
+node_modules/
+
+# web files copied for the apps by scripts/build-web.js
+www/
+
+# local tool settings
+.claude/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

@@ -1,0 +1,25 @@
+{
+  "name": "inkpad",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Handwriting notes app for Android tablets, iPads and the browser",
+  "scripts": {
+    "start": "node server.js",
+    "build:web": "node scripts/build-web.js",
+    "android:sync": "node scripts/build-web.js && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:apk": "node scripts/build-web.js && npx cap sync android && cd android && .\\gradlew.bat assembleDebug",
+    "ios:sync": "node scripts/build-web.js && npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
+    "docx-preview": "^0.4.1",
+    "jszip": "^3.10.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38"
+  }
+}
