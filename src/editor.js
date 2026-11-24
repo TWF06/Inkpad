@@ -7,6 +7,7 @@ import { readImage, readPdf, pdfNotePage, pageSizeFor, ensureBackgroundLayer, is
 import { createPanels } from './panels.js';
 import { isNative, NotesFolder } from './native.js';
 import { toggleTimer } from './timer.js';
+import { saveAs } from './export.js';
 
 const SETTINGS_KEY = 'inkpad.settings';
 const DEFAULT_SETTINGS = {
@@ -142,7 +143,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
         <button class="icon-btn" data-panel="layers" title="Layers">${icon('layers')}</button>
         <button class="icon-btn" data-panel="outline" title="Outline">${icon('outline')}</button>
         <button class="icon-btn" data-panel="links" title="Links & backlinks">${icon('link')}</button>
-        <button class="icon-btn" data-act="export" title="Export">${icon('download')}</button>
+        <button class="icon-btn" data-act="export" title="Save as another format">${icon('download')}</button>
       </div>
     </header>
     <div class="ebody">
@@ -840,10 +841,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
       case 'zoom': return fitView();
       case 'image': return attachMenu(b);
       case 'table': return insertTable();
-      case 'export': return menu(b, [
-        { label: a4 ? 'Current page as PNG' : 'Canvas as PNG', icon: 'image', action: exportPNG },
-        { label: 'Print / save as PDF', icon: 'download', action: exportPDF },
-      ]);
+      case 'export': return saveAs(note, { currentPage: currentPage(), save: () => save(true), print: exportPDF });
     }
   };
   el.querySelector('.etop').addEventListener('click', onBarClick);
@@ -1563,10 +1561,6 @@ export async function openEditor(root, noteId, app, opts = {}) {
   document.addEventListener('visibilitychange', onHide);
 
   // ---------- export ----------
-  function exportPNG() {
-    const i = currentPage();
-    R.renderPageCanvas(note, i, { scale: 2 }).toBlob((b) => (b ? download(`${note.title}${a4 ? ` p${i + 1}` : ''}.png`, b) : toast('This page is too large to export as a picture')));
-  }
   function exportPDF() {
     const imgs = note.pages.map((p, i) => ({ src: R.renderPageCanvas(note, i, { scale: 2 }).toDataURL('image/png'), wide: a4 && R.pageSize(p).w > R.pageSize(p).h }));
     // landscape pages print on landscape paper (named pages)

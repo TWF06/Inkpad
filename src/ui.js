@@ -108,11 +108,14 @@ export function modal({ title, message = '', fields = [], ok = 'OK', cancel = 'C
       if (f.when) row.dataset.when = f.name;
       box.append(row);
     }
-    // fields with `when: { field, is }` only show while that other field has that value
+    // fields with `when: { field, is }` only show while that other field has that value (or one of them, if a list)
     const form = dlg.querySelector('form');
+    // a `required` field (e.g. a choice with nothing picked yet) keeps the OK button off until it has a value
+    const okBtn = form.querySelector('button[value=ok]');
     const showFields = () => {
       const data = new FormData(form);
-      for (const f of fields) if (f.when) box.querySelector(`[data-when="${f.name}"]`).hidden = data.get(f.when.field) !== f.when.is;
+      for (const f of fields) if (f.when) box.querySelector(`[data-when="${f.name}"]`).hidden = ![].concat(f.when.is).includes(data.get(f.when.field));
+      okBtn.disabled = fields.some((f) => f.required && !data.get(f.name));
     };
     form.addEventListener('change', showFields);
     showFields();

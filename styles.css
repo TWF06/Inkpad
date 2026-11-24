@@ -352,3 +352,6 @@ code { background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; fon
 html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
 input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
+/* an OK button waiting for a choice */
+.btn:disabled { opacity: .45; cursor: default; filter: none; }

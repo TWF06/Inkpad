@@ -338,7 +338,7 @@ function script(rel) {
   });
 }
 let zipLib, docxLib;
-const loadZip = () => (zipLib ??= script('../vendor/jszip/jszip.min.js').then(() => window.JSZip));
+export const loadZip = () => (zipLib ??= script('../vendor/jszip/jszip.min.js').then(() => window.JSZip));
 const loadDocx = () => (docxLib ??= loadZip().then(() => script('../vendor/docx-preview/docx-preview.min.js')).then(() => window.docx));
 
 // ---------- reading OOXML (zip of XML parts) ----------
