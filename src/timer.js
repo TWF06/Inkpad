@@ -23,8 +23,8 @@ function finish() {
   beep();
   let msg = 'Timer finished';
   if (S.mode === 'pomodoro') {
-    if (S.phase === 'focus') { S.phase = S.round % 4 === 0 ? 'long' : 'break'; msg = 'Focus done — take a break'; }
-    else { S.phase = 'focus'; S.round++; msg = 'Break over — back to focus'; }
+    if (S.phase === 'focus') { S.phase = S.round % 4 === 0 ? 'long' : 'break'; msg = 'Break'; }
+    else { S.phase = 'focus'; S.round++; msg = 'Focus'; }
     S.elapsed = 0; S.startedAt = Date.now();
   } else { S.running = false; S.elapsed = 0; }
   toast(msg, 4000);

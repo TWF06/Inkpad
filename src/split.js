@@ -98,9 +98,8 @@ export async function pickSplitNote(note) {
   return new Promise((resolve) => {
     const dlg = h(`<dialog class="modal split-pick"><form method="dialog">
       <h3>Split screen</h3>
-      <p class="muted">Choose what goes next to “${esc(note.title)}”.</p>
-      <button type="button" class="pick-row same" data-id="${esc(note.id)}">${icon('copy', 18)}<span><b>This note again</b><small class="muted">Look at one page while you write on another</small></span></button>
-      <label class="search">${icon('search', 16)}<input placeholder="Search notes…" /></label>
+      <button type="button" class="pick-row same" data-id="${esc(note.id)}">${icon('copy', 18)}<span><b>This note again</b></span></button>
+      <label class="search">${icon('search', 16)}<input placeholder="Search" /></label>
       <div class="pick-list"></div>
       <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button></div>
     </form></dialog>`);

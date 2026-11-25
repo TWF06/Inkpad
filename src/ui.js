@@ -75,6 +75,7 @@ export function h(html) {
 let toastEl;
 export function toast(msg, ms = 2400) {
   toastEl?.remove();
+  if (!msg) { toastEl = null; return; }
   toastEl = h(`<div class="toast">${esc(msg)}</div>`);
   document.body.append(toastEl);
   const el = toastEl;

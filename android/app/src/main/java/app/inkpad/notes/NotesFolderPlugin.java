@@ -447,19 +447,38 @@ public class NotesFolderPlugin extends Plugin {
         if (collect(intent)) notifyListeners("shared", new JSObject());
     }
 
+    /**
+     * Only files another app hands over through its own content provider. Any app can send Inkpad an intent, so a
+     * file:// path or a content:// address of Inkpad's own provider would make Inkpad copy its own private files
+     * (preferences, WebView data, the cache) into the notes folder where the sender could read them.
+     */
+    private boolean acceptable(Uri u) {
+        if (u == null || !ContentResolver.SCHEME_CONTENT.equals(u.getScheme())) return false;
+        String auth = u.getAuthority();
+        return auth != null && !auth.startsWith(getContext().getPackageName());
+    }
+
+    private static final int MAX_SHARED = 20;
+
     private boolean collect(Intent intent) {
         if (intent == null || intent.getAction() == null) return false;
         String a = intent.getAction();
         boolean got = false;
-        if (Intent.ACTION_SEND.equals(a)) {
-            Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-            if (u != null) { shared.add(u); got = true; }
-        } else if (Intent.ACTION_SEND_MULTIPLE.equals(a)) {
-            ArrayList<Uri> us = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-            if (us != null) { shared.addAll(us); got = !us.isEmpty(); }
-        } else if (Intent.ACTION_VIEW.equals(a) && intent.getData() != null) {
-            shared.add(intent.getData());
-            got = true;
+        List<Uri> in = new ArrayList<>();
+        try {
+            if (Intent.ACTION_SEND.equals(a)) {
+                Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (u != null) in.add(u);
+            } else if (Intent.ACTION_SEND_MULTIPLE.equals(a)) {
+                ArrayList<Uri> us = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (us != null) in.addAll(us);
+            } else if (Intent.ACTION_VIEW.equals(a) && intent.getData() != null) {
+                in.add(intent.getData());
+            }
+        } catch (Exception ignored) {} // a malformed intent from another app must not crash Inkpad
+        for (Uri u : in) {
+            if (shared.size() >= MAX_SHARED) break;
+            if (acceptable(u)) { shared.add(u); got = true; }
         }
         if (got) getActivity().setIntent(new Intent(Intent.ACTION_MAIN)); // don't open them again after a restart
         return got;
@@ -529,8 +548,8 @@ public class NotesFolderPlugin extends Plugin {
      */
     @PluginMethod
     public void share(PluginCall call) {
-        String filename = call.getString("filename", "Inkpad").replaceAll("[\\\\/:*?\"<>|]", " ").trim();
-        if (filename.isEmpty()) filename = "Inkpad";
+        String filename = call.getString("filename", "Inkpad").replaceAll("[\\\\/:*?\"<>|\\x00-\\x1f]", " ").trim();
+        if (filename.isEmpty() || filename.matches("\\.+")) filename = "Inkpad";
         String mime = call.getString("mime", "application/octet-stream");
         try {
             File dir = new File(getContext().getCacheDir(), "outbox");
@@ -581,6 +600,10 @@ public class NotesFolderPlugin extends Plugin {
         String title = call.getString("title", "Inkpad");
         getActivity().runOnUiThread(() -> {
             WebView v = new WebView(getActivity());
+            // the pages are plain pictures: this view needs no script and no access to files on the device
+            v.getSettings().setJavaScriptEnabled(false);
+            v.getSettings().setAllowFileAccess(false);
+            v.getSettings().setAllowContentAccess(false);
             printView = v;
             v.setWebViewClient(new WebViewClient() {
                 @Override

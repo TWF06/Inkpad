@@ -12,7 +12,7 @@ export const PAPERS = {
   cream: { bg: '#fbf6e9', line: 'rgba(120,90,40,0.18)', dot: 'rgba(120,90,40,0.38)' },
   dark:  { bg: '#1f2126', line: 'rgba(255,255,255,0.10)', dot: 'rgba(255,255,255,0.28)' },
 };
-export const paperOf = (note) => PAPERS[note.paper] || PAPERS.white;
+export const paperOf = (note) => (Object.hasOwn(PAPERS, note.paper) && PAPERS[note.paper]) || PAPERS.white;
 
 const measure = document.createElement('canvas').getContext('2d');
 // Pictures (PDF pages above all: 2400 px JPEGs) are decoded in the background with createImageBitmap and kept
@@ -421,7 +421,7 @@ export function drawTemplate(ctx, note, rect, a4) {
  * opts.view: visible rect (page-local) for culling / infinite template; opts.exclude: Set of ids; opts.linkRects: out array.
  */
 export function drawPage(ctx, note, page, { view, exclude, linkRects, inkOnly } = {}) {
-  if (page.tpl && TEMPLATES[page.tpl]) note = { ...note, template: page.tpl };
+  if (page.tpl && Object.hasOwn(TEMPLATES, page.tpl)) note = { ...note, template: page.tpl };
   const a4 = note.kind === 'a4';
   const rect = a4 ? { x: 0, y: 0, ...pageSize(page) } : view;
   ctx.save();

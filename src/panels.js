@@ -78,7 +78,7 @@ export function createPanels(aside, ed) {
         if (a === 'up') ed.movePage(i, -1);
         if (a === 'down') ed.movePage(i, 1);
         if (a === 'add') ed.addPage(i);
-        if (a === 'del' && await confirmBox(`Delete page ${i + 1}?`, 'You can undo this.')) ed.deletePage(i);
+        if (a === 'del' && await confirmBox(`Delete page ${i + 1}?`)) ed.deletePage(i);
       };
       body.append(card);
     });
@@ -106,7 +106,7 @@ export function createPanels(aside, ed) {
         if (a === 'vis') ed.setLayers(() => { l.visible = !l.visible; }, false);
         if (a === 'lock') ed.setLayers(() => { l.locked = !l.locked; }, false);
         if (a === 'up' || a === 'down') ed.setLayers((ls) => { const j = idx + (a === 'up' ? 1 : -1); [ls[idx], ls[j]] = [ls[j], ls[idx]]; });
-        if (a === 'del' && await confirmBox(`Delete “${l.name}”?`, 'Everything drawn on this layer is removed. You can undo this.')) ed.removeLayer(l.id);
+        if (a === 'del' && await confirmBox(`Delete “${l.name}”?`)) ed.removeLayer(l.id);
         render();
       };
       row.querySelector('.lname').ondblclick = async () => {
@@ -122,13 +122,12 @@ export function createPanels(aside, ed) {
       ed.activeLayer = id;
       render();
     };
-    body.append(add, h('<p class="hint">New ink goes on the highlighted layer. Hidden and locked layers can’t be edited.</p>'));
+    body.append(add);
   }
 
   // ----- outline -----
   function outline(body) {
     const items = [...ed.note.outline].sort((a, b) => a.page - b.page || a.y - b.y);
-    if (!items.length) body.append(h('<p class="hint">Add outline entries to jump between sections of this note.</p>'));
     for (const o of items) {
       const row = h(`<div class="orow"><span class="otitle">${esc(o.title)}</span>${ed.a4 ? `<span class="muted">p${o.page + 1}</span>` : ''}
         <button class="icon-btn sm" data-a="ren" title="Rename">${icon('text', 14)}</button>
@@ -157,7 +156,6 @@ export function createPanels(aside, ed) {
 
   // ----- links / backlinks -----
   async function links(body) {
-    body.append(h('<p class="hint">Type <code>[[Note title]]</code> in any text box or table cell to link notes. Tap a link with the Lasso or Pan tool to open it.</p>'));
     const all = await ed.allNotes();
     const byTitle = new Map(all.map((n) => [n.title.trim().toLowerCase(), n]));
     const out = noteLinks(ed.note);

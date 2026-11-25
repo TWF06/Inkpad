@@ -3,7 +3,7 @@ import { store, newNote, initStorage, chooseFolder, useAppStorage, reconnectFold
 import { renderLibrary } from './library.js';
 import { openEditor } from './editor.js';
 import { openSplit, pickSplitNote } from './split.js';
-import { confirmBox, toast, h, icon, esc } from './ui.js';
+import { confirmBox, toast, h, icon, esc, modal } from './ui.js';
 import { importFiles, isPdf, isImage } from './importer.js';
 import { isNative, isIOS, NotesFolder, nativeFile } from './native.js';
 
@@ -18,7 +18,7 @@ const app = {
     const all = await store.listNotes();
     const hit = all.find((n) => n.title.trim().toLowerCase() === title.trim().toLowerCase());
     if (hit) return go(`/note/${hit.id}`);
-    if (!(await confirmBox(`Create “${title}”?`, 'No note has this title yet.', 'Create'))) return;
+    if (!(await confirmBox(`Create “${title}”?`, '', 'Create'))) return;
     const opts = { title, folderId: from?.folderId ?? null, kind: from?.kind ?? 'a4', template: from?.template && from.template !== 'blank' ? from.template : (from?.newPaper ?? 'lined'), paper: from?.paper ?? 'white' };
     if (opts.kind === 'a4') return go(`/note/${await (await import('./pdfnote.js')).createPdfNote(opts)}`);
     const n = newNote(opts);
@@ -39,18 +39,10 @@ async function storageGate() {
     insecure: `<h2>Open Inkpad from a secure address</h2>
       <p class="muted">Browsers only let a web app read and write files on the device when it is opened from <b>https://</b> or <b>localhost</b>.
       You opened <code>${esc(location.origin)}</code>. Put the app on an HTTPS host (see README) and open it from there.</p>`,
-    choose: `<h2>Where should your notes be saved?</h2>
-      <p class="muted">Each note is saved as a file on this device. Nothing is uploaded, and there's no database.</p>
-      <button class="btn primary wide" data-g="pick">${icon('folder', 18)} Choose a folder${isIOS ? '' : ' on this device'}</button>
-      <p class="muted small">${isIOS
-        ? 'For example a folder <b>Inkpad</b> in <b>iCloud Drive</b> (also on your other devices) or <b>On My iPad</b>.'
-        : 'Recommended: make a folder such as <b>Documents/Inkpad</b>.'} You'll see your notes as files in the Files app and can copy them anywhere.${isNative ? ' You only do this once: Inkpad keeps access to the folder from then on.' : ''}</p>
-      <button class="btn ghost wide" data-g="app">Keep them inside the app instead</button>
-      <p class="muted small">${isIOS
-        ? 'Saved in Inkpad’s own folder on this iPad. The Files app still shows it, under <b>On My iPad › Inkpad</b>.'
-        : 'Saved in the app’s own private folder on this device. Use “Save a copy” in a note’s menu to get it out.'}</p>`,
-    reconnect: `<h2>Allow access to your notes</h2>
-      <p class="muted">Your notes are in the folder <b>${name}</b> on this device. Tap below so Inkpad can open it again.</p>
+    choose: `<h2>Notes folder</h2>
+      <button class="btn primary wide" data-g="pick">${icon('folder', 18)} Choose a folder</button>
+      <button class="btn ghost wide" data-g="app">Keep inside the app</button>`,
+    reconnect: `<h2>Allow access</h2>
       <button class="btn primary wide" data-g="again">${icon('folder', 18)} Open “${name}”</button>
       <button class="btn ghost wide" data-g="pick">Choose a different folder</button>`,
   }[state];
@@ -67,7 +59,7 @@ async function storageGate() {
         if (g === 'again') ok = await reconnectFolder();
       } catch (err) {
         console.error(err);
-        return toast('This browser could not open storage for notes. Try another folder, or update the browser.', 5000);
+        return toast('Couldn’t open storage', 4000);
       }
       if (ok) { el.remove(); resolve(true); } else if (g) toast(g === 'again' ? 'Access was not allowed' : 'No folder chosen');
     });
@@ -112,19 +104,18 @@ async function lockNote(id) {
   if (got) return got;
   const el = h(`<div class="gate"><div class="gate-card"><div class="brand">${icon('pen', 26)}<b>Inkpad</b></div>
     <h2>This note is open in another window</h2>
-    <p class="muted">Editing it in two places at once would overwrite changes. You can move it here: the other window saves it and goes back to its library.</p>
     <button class="btn primary wide" data-g="here">Open here instead</button>
     <button class="btn ghost wide" data-g="back">Back to the library</button></div></div>`);
   root.append(el);
   const choice = await new Promise((res) => el.addEventListener('click', (e) => { const g = e.target.closest('[data-g]')?.dataset.g; if (g) res(g); }));
   if (choice === 'back') { el.remove(); app.go('/'); return null; }
-  el.querySelector('.gate-card').innerHTML = '<p class="muted">Waiting for the other window to save…</p>';
+  el.querySelector('.gate-card').innerHTML = '<p class="muted">Waiting…</p>';
   channel?.postMessage({ type: 'takeover', id });
   try {
     return await holdLock(name, { signal: AbortSignal.timeout(8000) });
   } catch {
     // the other window didn't answer (closed mid-way, or the browser froze it): open anyway rather than get stuck
-    toast('The other window did not respond. If it is still open, close it before editing.', 5000);
+    toast('The other window did not respond', 3000);
     return () => {};
   } finally { el.remove(); }
 }
@@ -174,15 +165,30 @@ async function openShared() {
   } else if ('caches' in self) {
     const cache = await caches.open('inkpad-shared');
     for (const req of await cache.keys()) {
-      const res = await cache.match(req);
-      const blob = await res.blob();
-      files.push(new File([blob], decodeURIComponent(res.headers.get('X-Name') || 'shared'), { type: blob.type }));
+      try {
+        const res = await cache.match(req);
+        const blob = await res.blob();
+        let name = 'shared';
+        try { name = decodeURIComponent(res.headers.get('X-Name') || 'shared'); } catch {}
+        files.push(new File([blob], name, { type: blob.type }));
+      } catch (e) { console.error(e); }
       await cache.delete(req);
     }
   }
   // only what the share target advertises: a page on another site can also POST to /share-target
   const usable = files.filter((f) => isPdf(f) || isImage(f));
   if (!usable.length) { toast('Nothing was shared'); return location.replace('#/'); }
+  // in a browser, any website can send files here (a form posting to /share-target), not only the device's Share
+  // menu: nothing goes into the notes folder until the user says so
+  if (!isNative) {
+    const names = usable.map((f) => f.name);
+    const ok = await modal({
+      title: `Open ${usable.length === 1 ? 'this shared file' : `${usable.length} shared files`}?`,
+      message: `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}. They will be saved in your notes folder.`,
+      ok: 'Open',
+    });
+    if (!ok) return location.replace('#/');
+  }
   const id = await importFiles(usable);
   location.replace(id ? `#/note/${id}` : '#/');
 }

@@ -415,9 +415,9 @@ public class NotesFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
      */
     @objc func share(_ call: CAPPluginCall) {
         var filename = call.getString("filename", "Inkpad")
-            .components(separatedBy: CharacterSet(charactersIn: "\\/:*?\"<>|")).joined(separator: " ")
+            .components(separatedBy: CharacterSet(charactersIn: "\\/:*?\"<>|").union(.controlCharacters)).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
-        if filename.isEmpty { filename = "Inkpad" }
+        if filename.isEmpty || filename.allSatisfy({ $0 == "." }) { filename = "Inkpad" }
         do {
             let outbox = fm.temporaryDirectory.appendingPathComponent("outbox", isDirectory: true)
             let cutoff = Date().addingTimeInterval(-600)   // earlier shares: the receiving app has had its copy by now
@@ -481,7 +481,10 @@ private class PrintJob: NSObject, WKNavigationDelegate {
     let ready: (WKWebView) -> Void
 
     init(html: String, ready: @escaping (WKWebView) -> Void) {
-        web = WKWebView(frame: CGRect(x: 0, y: 0, width: 794, height: 1123))
+        // the pages are plain pictures: no script runs in this view
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        web = WKWebView(frame: CGRect(x: 0, y: 0, width: 794, height: 1123), configuration: config)
         self.ready = ready
         super.init()
         web.navigationDelegate = self

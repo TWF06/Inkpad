@@ -1,6 +1,7 @@
 // Service worker: offline app shell + receiving files shared from other apps ("Share → Inkpad").
-const SHELL = 'inkpad-shell-v9';
+const SHELL = 'inkpad-shell-v16';
 const SHARED = 'inkpad-shared';
+const MAX_SHARED = 20, MAX_SHARED_BYTES = 200 * 1024 * 1024;
 const FILES = ['./', './index.html', './styles.css', './icon.svg', './manifest.webmanifest',
   './src/app.js', './src/theme.js', './src/split.js', './src/export.js', './src/editor.js', './src/library.js', './src/panels.js', './src/render.js', './src/shapes.js',
   './src/store.js', './src/timer.js', './src/ui.js', './src/importer.js', './src/native.js', './src/pdfnote.js', './src/pdfwork.js', './vendor/capacitor/capacitor.js',
@@ -19,11 +20,14 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return;
   if (e.request.method === 'POST' && url.pathname.endsWith('/share-target')) {
     e.respondWith((async () => {
-      const form = await e.request.formData();
+      // any web page can POST here, so keep it bounded; the app asks before it opens anything (app.js openShared)
+      let form;
+      try { form = await e.request.formData(); } catch { return Response.redirect('./#/', 303); }
       const cache = await caches.open(SHARED);
+      for (const old of await cache.keys()) await cache.delete(old);   // never let unopened shares pile up
       let n = 0;
       for (const f of form.getAll('files')) {
-        if (!(f instanceof File)) continue;
+        if (!(f instanceof File) || n >= MAX_SHARED || f.size > MAX_SHARED_BYTES) continue;
         await cache.put(`./shared/${Date.now()}-${n++}`, new Response(f, { headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(f.name) } }));
       }
       return Response.redirect('./#/shared', 303);

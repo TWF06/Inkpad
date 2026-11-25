@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   widths: { pen: [1.5, 2.5, 5], highlighter: [12, 20, 32], eraser: [10, 20, 44], text: [14, 18, 28] },
   wsel: {},           // which size preset of each tool is in use; dragging the size slider changes that preset
   floatPos: null,     // where the colour / size bar was dragged to
+  dock: null,         // or the edge it is docked to: top | bottom | left | right
   autoShape: true,
   eraserMode: 'stroke',   // 'stroke': erase whole strokes; 'part': erase only what the eraser covers
   stylusOnly: true,  // write with the stylus; fingers pan & zoom (palm rejection)
@@ -60,16 +61,16 @@ export async function openEditor(root, noteId, app, opts = {}) {
   // Page notes are PDFs now. An older page note (an .inkpad file) is moved into its PDF the first time it's opened:
   // into the PDF it was made from if that is still in the folder, else into a new PDF. Its .inkpad file goes.
   if (!peer && note.kind === 'a4' && !note.pdf) {
-    toast('Saving this note as a PDF…', 120000);
+    toast('Saving…', 120000);
     try {
       const pn = await import('./pdfnote.js');
       const id = await pn.moveNoteIntoPdf(note, null, store.hasFile(note.source));
-      toast('Saved as a PDF. Your writing is in the PDF now and stays editable here.', 3500);
+      toast('Saved as PDF', 1600);
       app.go(`/note/${id}`);
       return null;
     } catch (err) {
       console.error(err);
-      toast('Couldn’t save this note as a PDF; it stays as it was.', 5000);
+      toast('Couldn’t save as PDF', 4000);
     }
   }
   const pdfMod = note.pdf ? await import('./pdfnote.js') : null;
@@ -111,7 +112,6 @@ export async function openEditor(root, noteId, app, opts = {}) {
   let linkRects = [];
   let spaceDown = false;
   let returnTool = null;      // tool to go back to after placing a picture
-  let fingerHint = false;
   let sceneDirty = true, raf = 0, saveTimer = 0, destroyed = false;
   let dirty = false;           // content changed since the last save
   let saveWarned = false;
@@ -131,27 +131,27 @@ export async function openEditor(root, noteId, app, opts = {}) {
         <button class="icon-btn" data-act="redo" title="Redo (Ctrl+Y)">${icon('redo')}</button>
       </div>
       <div class="grp tools">${TOOLS.map(([t, ic, tip]) => `<button class="icon-btn tool" data-tool="${t}" title="${tip}">${icon(ic)}</button>`).join('')}
-        <button class="icon-btn" data-act="autoshape" title="Auto-shape: hold the pen still at the end of a stroke">${icon('shape')}</button>
-        <button class="icon-btn" data-act="image" title="Add a picture, photo or PDF">${icon('image')}</button>
+        <button class="icon-btn" data-act="autoshape" title="Auto-shape">${icon('shape')}</button>
+        <button class="icon-btn" data-act="image" title="Insert">${icon('image')}</button>
         <button class="icon-btn" data-act="table" title="Insert table">${icon('table')}</button>
       </div>
       <div class="spacer"></div>
       <div class="grp">
         <button class="zoom-btn" data-act="zoom" title="Reset zoom">100%</button>
-        <button class="icon-btn" data-act="stylus" title="Stylus only: fingers pan & zoom (palm rejection)">${icon('stylus')}</button>
+        <button class="icon-btn" data-act="stylus" title="Stylus only">${icon('stylus')}</button>
         <button class="icon-btn" data-act="timer" title="Focus timer">${icon('timer')}</button>
         ${opts.split ? `<button class="icon-btn" data-act="unsplit" title="Close this side">${icon('close')}</button>` : `<button class="icon-btn" data-act="split" title="Split screen">${icon('split')}</button>`}
         ${a4 ? `<button class="icon-btn" data-panel="pages" title="Pages">${icon('pages')}</button>` : ''}
         <button class="icon-btn" data-panel="layers" title="Layers">${icon('layers')}</button>
         <button class="icon-btn" data-panel="outline" title="Outline">${icon('outline')}</button>
         <button class="icon-btn" data-panel="links" title="Links & backlinks">${icon('link')}</button>
-        <button class="icon-btn" data-act="export" title="Save as another format">${icon('download')}</button>
+        <button class="icon-btn" data-act="export" title="Export">${icon('download')}</button>
       </div>
     </header>
     <div class="ebody">
-      <div class="stage"><canvas></canvas><div class="selbar" hidden></div>
-        <div class="floatbar"><span class="fb-grip" title="Drag to move">${icon('grip', 16)}</span><div class="grp emode" hidden><button class="seg" data-emode="stroke" title="Erase whole strokes">Whole</button><button class="seg" data-emode="part" title="Erase only what the eraser covers">Part</button></div><div class="grp colors"></div><div class="grp widths"></div></div>
-      </div>
+      <div class="work"><div class="stage"><canvas></canvas><div class="selbar" hidden></div>
+        <div class="floatbar"><span class="fb-grip" title="Move">${icon('grip', 16)}</span><div class="grp emode" hidden><button class="seg" data-emode="stroke">Whole</button><button class="seg" data-emode="part">Part</button></div><div class="grp colors"></div><div class="grp widths"></div></div>
+      </div></div>
       <aside class="panel"></aside>
     </div>
   </div>`);
@@ -256,7 +256,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
     } catch (err) {
       console.error(err);
       dirty = dirty || wasDirty;
-      if (!saveWarned) { saveWarned = true; toast('Couldn’t save this note. Check the notes folder is still available and has free space.', 6000); }
+      if (!saveWarned) { saveWarned = true; toast('Couldn’t save this note', 5000); }
       if (!destroyed && dirty) { clearTimeout(saveTimer); saveTimer = setTimeout(save, 5000); } // keep retrying while open
     }
   }
@@ -611,6 +611,12 @@ export async function openEditor(root, noteId, app, opts = {}) {
       setCam({ z, x: -(cssW / z - R.PAGE_W) / 2, y: -24 / z });
     } else setCam({ z: 1, x: 0, y: 0 });
   }
+  /** Zoom to exactly 100%, keeping the middle of the view where it is (pages stay centred across). */
+  function actualSize() {
+    const cy = cam.y + cssH / 2 / cam.z;
+    const x = a4 ? -(cssW - R.PAGE_W) / 2 : cam.x + cssW / 2 / cam.z - cssW / 2;
+    setCam({ z: 1, x, y: cy - cssH / 2 });
+  }
   function goTo(pageIndex, x, y) {
     const o = pageOrigin(pageIndex);
     if (x == null) { // page top
@@ -749,7 +755,9 @@ export async function openEditor(root, noteId, app, opts = {}) {
     const emode = el.querySelector('.emode');
     emode.hidden = tool !== 'eraser';
     emode.querySelectorAll('[data-emode]').forEach((b) => b.classList.toggle('on', b.dataset.emode === settings.eraserMode));
-    el.querySelector('.floatbar').hidden = colors.hidden && widths.hidden && emode.hidden;
+    // docked, the bar stays put even when empty, so the page doesn't jump when the tool changes
+    el.querySelector('.floatbar').hidden = !settings.dock && colors.hidden && widths.hidden && emode.hidden;
+    applyDock();
     placeFloat();
     canvas.dataset.tool = tool;
     updateButtons();
@@ -763,25 +771,68 @@ export async function openEditor(root, noteId, app, opts = {}) {
     el.querySelector('.wval').textContent = tool === 'text' ? `${t.width}px` : t.width;
   }
 
-  // ---------- floating colour / size bar (drag it by its grip; the place is remembered) ----------
+  // ---------- colour / size bar: floats where it is dragged; dropped near the top it docks as a second toolbar row ----------
+  // Docked, it takes its own space above the page instead of covering it. Dragging it down from there floats it again.
   const floatbar = el.querySelector('.floatbar');
+  const work = el.querySelector('.work');
+  const DOCK_EDGE = 40;   // px from the top of the writing area that docks the bar when it is let go
+  if (settings.dock !== 'top') settings.dock = null;
+  function applyDock() {
+    const d = settings.dock;
+    const before = stage.getBoundingClientRect();   // before anything changes: undocking moves the page area at once
+    floatbar.classList.toggle('docked', !!d);
+    floatbar.classList.toggle('dock-top', !!d);
+    if (!d) { if (floatbar.parentNode !== stage) stage.append(floatbar); }
+    else if (work.firstChild !== floatbar) work.insertBefore(floatbar, stage);
+    if (d) { floatbar.style.left = floatbar.style.top = ''; }
+    // the writing area moved or changed size: keep the page where it was on screen
+    const after = stage.getBoundingClientRect();
+    if (after.top !== before.top || after.height !== before.height) {
+      cam = { ...cam, y: cam.y + (after.top - before.top) / cam.z };
+      resize();
+    }
+  }
   function placeFloat() {
-    if (floatbar.hidden || !stage.clientWidth) return;
+    if (settings.dock || floatbar.hidden || !stage.clientWidth) return;
     const bw = floatbar.offsetWidth, bh = floatbar.offsetHeight;
     const p = settings.floatPos || { x: (stage.clientWidth - bw) / 2, y: 10 };
     floatbar.style.left = Math.max(4, Math.min(stage.clientWidth - bw - 4, p.x)) + 'px';
     floatbar.style.top = Math.max(4, Math.min(stage.clientHeight - bh - 4, p.y)) + 'px';
   }
+  const nearTop = (y) => y - work.getBoundingClientRect().top < DOCK_EDGE;
   floatbar.querySelector('.fb-grip').addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    const grip = e.currentTarget;
-    grip.setPointerCapture(e.pointerId);
-    const sx = e.clientX - floatbar.offsetLeft, sy = e.clientY - floatbar.offsetTop;
-    const mv = (ev) => { settings.floatPos = { x: ev.clientX - sx, y: ev.clientY - sy }; placeFloat(); };
-    const up = () => { grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); saveSettings(); };
-    grip.addEventListener('pointermove', mv);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
+    e.stopPropagation();
+    const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+    let sx = 0, sy = 0, moved = false;
+    if (!settings.dock) { const sr = stage.getBoundingClientRect(); sx = e.clientX - sr.left - floatbar.offsetLeft; sy = e.clientY - sr.top - floatbar.offsetTop; }
+    const mv = (ev) => {
+      if (ev.pointerId !== pid) return;
+      if (!moved) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        moved = true;
+        if (settings.dock) {
+          // leave the dock: the bar floats under the finger, grabbed by its grip
+          settings.dock = null;
+          updateToolbar();
+          sx = 14; sy = floatbar.offsetHeight / 2;
+        }
+      }
+      const sr = stage.getBoundingClientRect();
+      settings.floatPos = { x: ev.clientX - sr.left - sx, y: ev.clientY - sr.top - sy };
+      placeFloat();
+      work.classList.toggle('dock-hint', nearTop(ev.clientY));
+    };
+    const up = (ev) => {
+      if (ev.pointerId !== pid) return;
+      removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
+      work.classList.remove('dock-hint');
+      if (moved && ev.type === 'pointerup' && nearTop(ev.clientY)) { settings.dock = 'top'; updateToolbar(); }
+      saveSettings();
+    };
+    addEventListener('pointermove', mv);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
   });
   // the size slider sets the tool's size and the preset in use, so the custom size is kept for next time
   floatbar.addEventListener('input', (e) => {
@@ -837,10 +888,10 @@ export async function openEditor(root, noteId, app, opts = {}) {
       case 'unsplit': return opts.split?.close();
       case 'undo': return undo();
       case 'redo': return redo();
-      case 'autoshape': settings.autoShape = !settings.autoShape; saveSettings(); updateToolbar(); return toast(`Auto-shape ${settings.autoShape ? 'on — hold still at the end of a stroke' : 'off'}`);
-      case 'stylus': settings.stylusOnly = !settings.stylusOnly; saveSettings(); updateToolbar(); return toast(settings.stylusOnly ? 'Stylus writes, fingers pan & zoom' : 'Fingers write too');
+      case 'autoshape': settings.autoShape = !settings.autoShape; saveSettings(); updateToolbar(); return toast(`Auto-shape ${settings.autoShape ? 'on' : 'off'}`, 1200);
+      case 'stylus': settings.stylusOnly = !settings.stylusOnly; saveSettings(); updateToolbar(); return toast(settings.stylusOnly ? 'Stylus only' : 'Finger writing', 1200);
       case 'timer': return toggleTimer();
-      case 'zoom': return fitView();
+      case 'zoom': return actualSize();
       case 'image': return attachMenu(b);
       case 'table': return insertTable();
       case 'export': return saveAs(note, { currentPage: currentPage(), save: () => save(true), print: exportPDF });
@@ -856,7 +907,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
   });
   el.querySelector('.colors').addEventListener('change', () => updateToolbar());
   const titleInput = el.querySelector('.title-input');
-  if (note.pdf) { titleInput.readOnly = true; titleInput.title = `${note.pdf} — rename it from the library`; }
+  if (note.pdf) { titleInput.readOnly = true; titleInput.title = note.pdf; }
   titleInput.addEventListener('change', () => { note.title = titleInput.value.trim() || 'Untitled'; titleInput.value = note.title; scheduleSave(); panels.refresh(); });
   titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') titleInput.blur(); e.stopPropagation(); });
 
@@ -869,7 +920,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
   async function insertFiles(files, at) {
     files = [...files];
     const imgs = files.filter(isImage), pdfs = files.filter(isPdf);
-    if (!imgs.length && !pdfs.length) return toast('Only pictures and PDFs can be added to a note');
+    if (!imgs.length && !pdfs.length) return toast('Unsupported file');
     if (imgs.length) {
       if (!requireLayer()) return;
       const p = at || insertPoint();
@@ -894,12 +945,11 @@ export async function openEditor(root, noteId, app, opts = {}) {
         setTool('lasso');
         if (prev !== 'lasso') returnTool = prev;
         selection = { page: p.i, ids }; buildSelbar(); requestFrame();
-        toast(`${added.length > 1 ? `Added ${added.length} pictures` : 'Picture added'} — drag to move, corner to resize${returnTool ? ', then keep writing' : ''}`, 3500);
       }
     }
     for (const f of pdfs) {
       let pages;
-      try { pages = await readPdf(f, (i, n) => toast(`Reading ${f.name}… page ${i} of ${n}`, 60000)); }
+      try { pages = await readPdf(f, (i, n) => toast(`${i} / ${n}`, 60000)); }
       catch (e) { console.error(e); toast(`Couldn’t open ${f.name}`); continue; }
       if (!pages) continue;
       // a PDF note: the added PDF's own pages are copied into this PDF when it is saved (a merge)
@@ -917,7 +967,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
         setElements(0, [...page(0).elements, ...els]);
         changed();
       }
-      toast(`Added ${pages.length} PDF page${pages.length === 1 ? '' : 's'} — write on top; they sit on the locked “PDF” layer`, 4000);
+      toast('');
     }
   }
 
@@ -943,7 +993,6 @@ export async function openEditor(root, noteId, app, opts = {}) {
     const colW = Array(cols).fill(Math.min(140, Math.floor(600 / cols))), rowH = Array(rows).fill(36);
     const t = { id: uid(), type: 'table', layerId: activeLayer, x: p.x - colW.reduce((a, b) => a + b) / 2, y: p.y - rows * 18, colW, rowH, cells: Array.from({ length: rows }, () => Array(cols).fill('')), color: settings.tools.text.color, size: 15 };
     addElement(p.i, t);
-    toast('Use the Text tool to type into cells');
   }
 
   // ---------- text editing ----------
@@ -1075,7 +1124,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
     const sp = localPt(e);
     if (e.pointerType === 'pen' && !localStorage.getItem(PEN_SEEN_KEY)) {
       localStorage.setItem(PEN_SEEN_KEY, '1');
-      if (!settings.stylusOnly) { settings.stylusOnly = true; saveSettings(); updateToolbar(); toast('Stylus detected — fingers now pan & zoom', 3000); }
+      if (!settings.stylusOnly) { settings.stylusOnly = true; saveSettings(); updateToolbar(); toast('Stylus only', 1200); }
     }
     if (e.pointerType === 'touch') {
       touches.set(e.pointerId, sp);
@@ -1171,7 +1220,6 @@ export async function openEditor(root, noteId, app, opts = {}) {
     const el2 = pg && (finger ? topHit(pg.i, pg.x, pg.y, 12 / cam.z, (x) => x.type !== 'text') : topHit(pg.i, pg.x, pg.y, 0, (x) => x.type === 'image'));
     return el2 ? { i: pg.i, el: el2 } : null;
   }
-  let eraseHintShown = false;
   /** The stylus was held still where a stroke started: erase with it from here until it's lifted (the tool stays). */
   function holdToErase(a) {
     if (action !== a) return;
@@ -1182,7 +1230,6 @@ export async function openEditor(root, noteId, app, opts = {}) {
     hover = a.sp0;
     el.querySelector('[data-tool=eraser]')?.classList.add('on');
     navigator.vibrate?.(25);
-    if (!eraseHintShown) { eraseHintShown = true; toast('Eraser — lift the stylus to go back', 1600); }
     eraseAt(w);
     sceneDirty = true;
     requestFrame();
@@ -1199,14 +1246,9 @@ export async function openEditor(root, noteId, app, opts = {}) {
     buildSelbar();
     requestFrame();
     navigator.vibrate?.(25);
-    toast(`${hit.el.type === 'image' ? 'Picture' : hit.el.type === 'table' ? 'Table' : 'Drawing'} selected: drag to move, drag a corner to resize`, 2200);
   }
 
   function startDown(e, sp, nav) {
-    if (nav && e.pointerType === 'touch' && settings.stylusOnly && !fingerHint && !localStorage.getItem(PEN_SEEN_KEY) && (tool === 'pen' || tool === 'highlighter')) {
-      fingerHint = true;
-      toast('Fingers move the page. No stylus? Tap the stylus button in the toolbar to write with your finger.', 5000);
-    }
     if (nav) { action = { type: 'pan', id: e.pointerId, last: sp, start: sp, touch: e.pointerType === 'touch' }; canvas.classList.add('panning'); return; }
     if (e.button !== 0) return;
     const w = toWorld(sp.x, sp.y);
@@ -1527,7 +1569,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
     if ((e.ctrlKey || e.metaKey) && (k === '=' || k === '+')) { e.preventDefault(); zoomAt(cssW / 2, cssH / 2, 1.2); return; }
     if ((e.ctrlKey || e.metaKey) && k === '-') { e.preventDefault(); zoomAt(cssW / 2, cssH / 2, 1 / 1.2); return; }
-    if ((e.ctrlKey || e.metaKey) && k === '0') { e.preventDefault(); fitView(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === '0') { e.preventDefault(); actualSize(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (k === ' ') { spaceDown = true; canvas.classList.add('grab'); e.preventDefault(); return; }
     if ((k === 'delete' || k === 'backspace') && selection) { mutateSelection(() => null); clearSelection(); return; }
@@ -1540,7 +1582,8 @@ export async function openEditor(root, noteId, app, opts = {}) {
     if (!active() || e.target.matches?.('input, textarea')) return;
     const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
     if (item) { e.preventDefault(); insertFiles([item.getAsFile()]); return; }
-    const text = e.clipboardData?.getData('text/plain');
+    // a text box keeps at most 100 000 characters (store.js sanitizeNote): a huge paste would be cut on reopening anyway
+    const text = e.clipboardData?.getData('text/plain')?.slice(0, 100000);
     if (text && requireLayer()) {
       e.preventDefault();
       const p = insertPoint(), t = settings.tools.text;
@@ -1633,6 +1676,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
   });
   const stopAssets = R.addAssetListener(() => { assetVer++; sceneDirty = true; requestFrame(); panels.refresh(true); });
   el.addEventListener('pointerdown', () => opts.onActivate?.(), true);
+  applyDock();
   const ro = new ResizeObserver(() => resize());
   ro.observe(stage);
   resize();
@@ -1689,11 +1733,10 @@ export async function openEditor(root, noteId, app, opts = {}) {
         for (const s of [...undoStack, ...redoStack]) s.pages = swap(s.pages);
         done++;
         sceneDirty = true; requestFrame(); notifyPeers();
-        toast(`Sharpening PDF pages… ${done} of ${todo.length}`, 4000);
         if (done % 10 === 0) scheduleSave();
       });
     } catch (err) { console.error(err); }
-    if (done && !destroyed) { scheduleSave(); toast('PDF pages are sharp now', 1800); }
+    if (done && !destroyed) scheduleSave();
   }
 
   self = {
@@ -1732,7 +1775,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
         const name = note.title;
         store.flush(note)
           .then((wrote) => { if (wrote) toast(`Saved into ${name}${fileExt}`, 1600); })
-          .catch((err) => { console.error(err); toast(`Couldn’t write into ${name}${fileExt}. Your writing is kept on this device and saved next time.`, 6000); })
+          .catch((err) => { console.error(err); toast(`Couldn’t save ${name}${fileExt}`, 4000); })
           .finally(() => pdfMod.closePdfNote(note.id));
       }
     },

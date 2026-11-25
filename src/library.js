@@ -39,11 +39,11 @@ export async function renderLibrary(root, app, folderId = null) {
   // show what was there last time straight away; the folder is checked in the background and the view updates
   // if files were added, changed or removed outside the app. The first time, everything is read before showing.
   const snap = store.snapshot();
-  if (!snap) toast('Loading the notes folder…', 60000);
+  if (!snap) toast('Loading…', 60000);
   let folders = snap ? snap.folders : await store.allFolders();
   let notes = snap ? snap.notes : await store.listNotes();   // summaries: quick, no pages
   let docs = snap ? snap.docs : await store.documents();
-  if (!snap) toast('Ready', 600);
+  if (!snap) toast('');
   let gone = false;
   let query = '';
   const byId = new Map(folders.map((f) => [f.id, f]));
@@ -57,21 +57,21 @@ export async function renderLibrary(root, app, folderId = null) {
   const el = h(`<div class="library">
     <aside class="tree"><div class="brand">${icon('pen', 22)}<b>Inkpad</b><button class="icon-btn sm pin" data-a="pin"></button></div><nav></nav>
       <div class="tree-foot">
-        <div class="where" title="Notes are saved as .inkpad files here">${icon('folder', 16)}<span><small class="muted">Saved in</small><b></b></span></div>
-        ${canPickFolder ? `<button class="btn ghost wide" data-a="where">${icon('folder', 16)} Change notes folder</button>` : ''}
-        <div class="theme-seg" title="Theme of the app (paper keeps its own colour)">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([t, l]) => `<button data-theme-set="${t}">${l}</button>`).join('')}</div>
+        <div class="where">${icon('folder', 16)}<span><b></b></span></div>
+        ${canPickFolder ? `<button class="btn ghost wide" data-a="where">${icon('folder', 16)} Change folder</button>` : ''}
+        <div class="theme-seg">${[['light', 'Light'], ['dark', 'Dark']].map(([t, l]) => `<button data-theme-set="${t}">${l}</button>`).join('')}</div>
       </div></aside>
     <main>
       <header class="lhead">
         <button class="icon-btn menu-btn" data-a="sidebar" title="Folders">${icon('sidebar', 20)}</button>
         <div class="crumbs"></div>
-        <label class="search">${icon('search', 16)}<input placeholder="Search titles and text…" /></label>
-        <button class="btn ghost" data-a="open" title="Open a PDF, picture or backup from this device">${icon('upload', 16)}<span class="lbl">Open file</span></button>
+        <label class="search">${icon('search', 16)}<input placeholder="Search" /></label>
+        <button class="btn ghost" data-a="open" title="Open file">${icon('upload', 16)}<span class="lbl">Open file</span></button>
         <button class="btn ghost" data-a="folder" title="New folder">${icon('folder', 16)}<span class="lbl">New folder</span></button>
         <button class="btn primary" data-a="note" title="New note">${icon('plus', 16)}<span class="lbl">New note</span></button>
       </header>
       <section class="grid"></section>
-      <div class="drop-hint">Drop PDFs, documents or pictures to open them</div>
+      <div class="drop-hint">Drop to open</div>
     </main></div>`);
   root.append(el);
   // on a narrow screen the sidebar slides over the page; tapping outside closes it
@@ -132,7 +132,7 @@ export async function renderLibrary(root, app, folderId = null) {
   }
 
   function folderPicker(title, exclude = new Set()) {
-    const opts = [{ value: '', label: 'Library (top level)' }];
+    const opts = [{ value: '', label: 'Library' }];
     const walk = (pid, depth) => children(pid).forEach((f) => { if (!exclude.has(f.id)) { opts.push({ value: f.id, label: `${'— '.repeat(depth + 1)}${f.name}` }); walk(f.id, depth + 1); } });
     walk(null, 0);
     return modal({ title, fields: [{ name: 'to', label: 'Destination', type: 'select', options: opts, value: folderId ?? '' }], ok: 'Move' }).then((r) => (r ? r.to || null : undefined));
@@ -147,13 +147,11 @@ export async function renderLibrary(root, app, folderId = null) {
   async function deleteNotes(list, what) {
     const r = isNative ? await store.trashNotes(list.map((x) => x.id)) : 'unsupported';
     if (r === 'trashed') {
-      toast(isIOS ? 'Moved to Recently Deleted. Restore it from the Files app within 30 days.' : 'Moved to the device’s Trash. Restore it from the Trash in the Files app within 30 days.', 4000);
+      toast(isIOS ? 'Moved to Recently Deleted' : 'Moved to Trash', 2000);
       return true;
     }
     if (r === 'cancelled') return false;
-    const one = list.length === 1;
-    const why = isNative ? `This device has no Trash for ${one ? 'this note' : 'these notes'}, so ${one ? 'it' : 'they'}` : (one ? 'It' : 'They');
-    if (!(await confirmBox(`Delete ${what}?`, `${why} will be deleted for good. This can’t be undone.`))) return false;
+    if (!(await confirmBox(`Delete ${what}?`, 'This can’t be undone.'))) return false;
     for (const x of list) await store.delNote(x.id);
     return true;
   }
@@ -180,7 +178,7 @@ export async function renderLibrary(root, app, folderId = null) {
           const ids = descendants(f.id);
           const n = notes.filter((x) => ids.has(x.folderId));
           if (n.length) { if (!(await deleteNotes(n, `“${f.name}”, ${ids.size - 1} subfolder(s) and ${n.length} note(s)`))) return; }
-          else if (!(await confirmBox(`Delete “${f.name}”?`, `It has ${ids.size - 1} empty subfolder(s) and no notes.`))) return;
+          else if (!(await confirmBox(`Delete “${f.name}”?`))) return;
           for (const id of ids) await store.delFolder(id);
           reload();
         } },
@@ -227,7 +225,7 @@ export async function renderLibrary(root, app, folderId = null) {
       const mb = d.size / 1048576;
       const card = h(`<div class="card note doc">
         <div class="thumb"><div class="blank">${icon(d.kind === 'image' ? 'image' : 'pages', 32)}<span class="badge">${d.kind === 'pdf' ? 'PDF' : 'Picture'}</span></div></div>
-        <div class="meta"><b>${esc(d.name.replace(/\.[^.]+$/, ''))}</b><span class="muted">${mb >= 1 ? mb.toFixed(1) + ' MB' : Math.max(1, Math.round(d.size / 1024)) + ' KB'} · tap to write on it</span></div></div>`);
+        <div class="meta"><b>${esc(d.name.replace(/\.[^.]+$/, ''))}</b><span class="muted">${mb >= 1 ? mb.toFixed(1) + ' MB' : Math.max(1, Math.round(d.size / 1024)) + ' KB'}</span></div></div>`);
       card.onclick = async () => {
         if (card.classList.contains('busy')) return;
         card.classList.add('busy');
@@ -241,7 +239,7 @@ export async function renderLibrary(root, app, folderId = null) {
     }
 
     if (!subfolders.length && !list.length && !shownDocs.length) {
-      grid.append(h(`<div class="empty">${q ? `No results for “${esc(query)}”.` : `<b>Nothing here yet</b><span class="muted">Create a note to start writing.</span>`}</div>`));
+      grid.append(h(`<div class="empty">${q ? `No results for “${esc(query)}”.` : `<b>Nothing here yet</b>`}</div>`));
     }
   }
 
@@ -253,16 +251,16 @@ export async function renderLibrary(root, app, folderId = null) {
       fields: [
         { name: 'title', label: 'Title', value: 'Untitled' },
         { name: 'kind', label: 'Type', type: 'choice', value: 'a4', options: [
-          { value: 'a4', html: `<b>PDF pages</b><small>Page-by-page notebook, saved as a PDF</small>` },
-          { value: 'infinite', html: `<b>Infinite canvas</b><small>Unbounded board for mind maps & sketches</small>` },
+          { value: 'a4', html: `<b>Pages</b>` },
+          { value: 'infinite', html: `<b>Infinite canvas</b>` },
         ] },
         { name: 'size', label: 'Page size', type: 'select', value: 'a4', when: { field: 'kind', is: 'a4' },
           options: [...Object.entries(PAGE_SIZES).map(([value, s]) => ({ value, label: s.label })), { value: 'custom', label: 'Custom…' }] },
         { name: 'cw', label: 'Width (mm)', type: 'number', value: 210, min: SIZE_MM.min, max: SIZE_MM.max, step: 'any', when: { field: 'size', is: 'custom' } },
         { name: 'ch', label: 'Height (mm)', type: 'number', value: 297, min: SIZE_MM.min, max: SIZE_MM.max, step: 'any', when: { field: 'size', is: 'custom' } },
         { name: 'orient', label: 'Orientation', type: 'choice', value: 'portrait', when: { field: 'size', is: Object.keys(PAGE_SIZES).filter((k) => k !== 'square') }, options: [
-          { value: 'portrait', html: `<b>Vertical</b><small>Portrait</small>` },
-          { value: 'landscape', html: `<b>Horizontal</b><small>Landscape</small>` },
+          { value: 'portrait', html: `<b>Portrait</b>` },
+          { value: 'landscape', html: `<b>Landscape</b>` },
         ] },
         { name: 'template', label: 'Template', type: 'select', value: 'lined', options: Object.entries(TEMPLATES).map(([value, label]) => ({ value, label })) },
         { name: 'paper', label: 'Paper color', type: 'select', value: 'white', options: [{ value: 'white', label: 'White' }, { value: 'cream', label: 'Cream' }, { value: 'dark', label: 'Dark' }] },
@@ -293,12 +291,12 @@ export async function renderLibrary(root, app, folderId = null) {
       if (name) { await store.putFolder({ id: uid(), name, parentId: folderId, color: COLORS[folders.length % COLORS.length], createdAt: Date.now() }); reload(); }
     }
     if (a === 'where') {
-      const ok = await chooseFolder((count) => modal({ title: `Copy your ${count} note(s) into this folder?`, message: 'They also stay where they are now. Choose Skip to see only what is already in the new folder.', ok: 'Copy', cancel: 'Skip' }).then(Boolean));
-      if (ok) { toast(`Notes are now saved in “${storagePlace().name}”`); reload(); }
+      const ok = await chooseFolder((count) => modal({ title: `Copy ${count} note(s) here?`, ok: 'Copy', cancel: 'Skip' }).then(Boolean));
+      if (ok) reload();
     }
     if (a === 'open') {
       menu(e.target.closest('[data-a]'), [
-        { label: 'PDF, document, picture or backup from this device', icon: 'note', action: async () => openFiles(await pickFile(ACCEPT_ALL, { multiple: true })) },
+        { label: 'From device', icon: 'note', action: async () => openFiles(await pickFile(ACCEPT_ALL, { multiple: true })) },
         { label: 'Take a photo', icon: 'image', action: async () => openFiles(await pickFile('image/*', { capture: 'environment', multiple: true })) },
       ]);
     }

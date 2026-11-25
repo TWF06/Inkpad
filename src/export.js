@@ -40,14 +40,14 @@ export async function saveAs(note, { currentPage = 0, save, print }) {
     title: 'Save as', ok: 'Save',
     fields: [
       { name: 'format', label: 'Format', type: 'choice', value: null, required: true, options: [
-        { value: 'own', html: `<b>${kindName} (${ext})</b><small>${note.pdf ? 'This note’s own file, with your writing' : 'Editable copy of this note'}</small>` },
-        ...(ext !== '.pdf' ? [{ value: 'pdf', html: '<b>PDF</b><small>Opens anywhere</small>' }] : []),
-        { value: 'png', html: '<b>PNG picture</b><small>One picture per page</small>' },
-        { value: 'print', html: '<b>Print</b><small>Or save as PDF from the print screen</small>' },
+        { value: 'own', html: `<b>${kindName} (${ext})</b>` },
+        ...(ext !== '.pdf' ? [{ value: 'pdf', html: '<b>PDF</b>' }] : []),
+        { value: 'png', html: '<b>PNG</b>' },
+        { value: 'print', html: '<b>Print</b>' },
       ] },
       ...(a4 && count > 1 ? [{ name: 'pages', label: 'Pages', type: 'choice', value: 'one', when: { field: 'format', is: 'png' }, options: [
-        { value: 'one', html: `<b>This page</b><small>Page ${currentPage + 1} of ${count}</small>` },
-        { value: 'all', html: `<b>All pages</b><small>${count} pictures in a ZIP file</small>` },
+        { value: 'one', html: `<b>This page</b><small>${currentPage + 1} / ${count}</small>` },
+        { value: 'all', html: `<b>All pages</b><small>ZIP</small>` },
       ] }] : []),
     ],
   });

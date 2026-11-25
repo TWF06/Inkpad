@@ -50,7 +50,6 @@ export async function readPdf(file, onProgress = () => {}) {
   if (count > MAX_PDF_PAGES) {
     const ok = await modal({
       title: `${file.name} has ${count} pages`,
-      message: `Very long PDFs make a note slow and can run out of memory on a tablet. Open the first ${MAX_PDF_PAGES} pages? To get the rest, split the PDF into parts first.`,
       ok: `Open first ${MAX_PDF_PAGES}`,
     });
     if (!ok) { await doc.destroy(); return null; }
@@ -188,7 +187,7 @@ export async function importFiles(files, folderId = null) {
       if (src) n.source = src;
       await store.putNote(n);
       openId ??= n.id;
-    } catch (e) { console.error(e); toast(`Couldn’t open ${f.name} (is it a valid PDF?)`, 4000); }
+    } catch (e) { console.error(e); toast(`Couldn’t open ${f.name}`, 4000); }
   }
   if (images.length) {
     const n = newNote({ title: images.length === 1 ? baseName(images[0]) : `Pictures ${new Date().toLocaleDateString()}`, folderId, kind: 'a4', template: 'blank' });
@@ -230,8 +229,7 @@ export async function importFiles(files, folderId = null) {
     } catch { toast(`${f.name} is not an Inkpad backup`); }
   }
   const skipped = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f));
-  if (skipped.length) toast(`Can’t open ${skipped.map((f) => f.name).join(', ')} — use PDFs, pictures or Inkpad files`, 5000);
+  if (skipped.length) toast(`Can’t open ${skipped.map((f) => f.name).join(', ')}`, 4000);
   else if (restored || keptNewer) toast(`Restored ${restored} note(s)${keptNewer ? ` · kept ${keptNewer} that are newer here` : ''}`, keptNewer ? 4000 : 2400);
-  else if (openId) toast('Opened', 800);
   return openId;
 }

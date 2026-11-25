@@ -120,7 +120,7 @@ export async function openPdfNote({ id, path, folderId, lm, size }) {
     clean.pages.slice(count).forEach((dp, k) => {
       const tpl = data.pages[count + k]?.tpl, ext = data.pages[count + k]?.ext;
       const okExt = ext && typeof ext.key === 'string' && Number.isInteger(ext.page) ? { ext: { key: ext.key, page: ext.page } } : {};
-      pages.push({ id: dp.id, w: dp.w || R.PAGE_W, h: dp.h || R.PAGE_H, pdfIndex: null, ...(R.TEMPLATES[tpl] ? { tpl } : {}), ...okExt, elements: [
+      pages.push({ id: dp.id, w: dp.w || R.PAGE_W, h: dp.h || R.PAGE_H, pdfIndex: null, ...(typeof tpl === 'string' && Object.hasOwn(R.TEMPLATES, tpl) ? { tpl } : {}), ...okExt, elements: [
         ...(okExt.ext ? [{ id: `bg_${dp.id}`.slice(0, 64), type: 'image', layerId: bg.id, x: 0, y: 0, w: dp.w || R.PAGE_W, h: dp.h || R.PAGE_H, src: BLANK }] : []),
         ...dp.elements] });
     });
@@ -129,7 +129,7 @@ export async function openPdfNote({ id, path, folderId, lm, size }) {
   const title = path.slice(path.lastIndexOf('/') + 1).replace(/\.pdf$/i, '');
   const note = {
     id, title, folderId, kind: 'a4', template: 'blank', paper: clean?.paper || 'white', pdf: path,
-    newPaper: data?.newPaper && R.TEMPLATES[data.newPaper] ? data.newPaper : 'lined',
+    newPaper: typeof data?.newPaper === 'string' && Object.hasOwn(R.TEMPLATES, data.newPaper) ? data.newPaper : 'lined',
     pages, layers, outline: clean?.outline || [], view: null, thumb: null,
     createdAt: lm, updatedAt: lm, dataId: typeof data?.id === 'string' ? data.id : uid(),
   };
@@ -274,7 +274,7 @@ function rgbaOver(rgba, bg) {
   return [r, g, b].map((v, i) => Math.round(v * a + bg[i] * (1 - a)));
 }
 const paperSpec = (note) => {
-  const pal = R.PAPERS[note.paper] || R.PAPERS.white, bg = hexRgb(pal.bg);
+  const pal = (Object.hasOwn(R.PAPERS, note.paper) && R.PAPERS[note.paper]) || R.PAPERS.white, bg = hexRgb(pal.bg);
   return { template: note.newPaper || 'lined', bg: note.paper === 'white' ? null : bg, line: rgbaOver(pal.line, bg), dot: rgbaOver(pal.dot, bg) };
 };
 
@@ -378,7 +378,6 @@ async function addedPdfs(note) {
 
 /** A thumbnail of page 1 (with the writing) and the page count, for the library. */
 export async function pdfThumb(path) {
-  if (isOfficePath(path)) return (await office()).officeThumb(path);
   const file = await store.openDocument(path);
   const lib = await loadPdfJs();
   const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
@@ -397,7 +396,6 @@ export async function pdfThumb(path) {
 
 /** Forget what the device cached about a PDF (after it was deleted, renamed or moved). */
 export async function forgetPdf(path) {
-  if (isOfficePath(path)) return (await office()).forgetOffice(path);
   for (const k of ['pdfstate', 'pdfdata', 'journal']) await kvSet(`${k}:${path}`, undefined);
 }
 
