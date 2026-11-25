@@ -2,17 +2,13 @@
 import { uid, newNote, store, NOTE_EXT, sanitizeNote, sanitizeFolder } from './store.js';
 import { PAGE_W, PAGE_H } from './render.js';
 import { toast, modal } from './ui.js';
-import { isDocument, isOldFormat, oldFormatHelp, documentToPdf, DOC_ACCEPT } from './docconvert.js';
-
-export { isDocument };
 
 // every page becomes a picture kept in memory and in the note file; past this a tablet can run out of memory
 export const MAX_PDF_PAGES = 150;
 export const PDF_RES = 2400;
 
-export const ACCEPT_ALL = `image/*,application/pdf,.pdf,${DOC_ACCEPT},.json,application/json,${NOTE_EXT}`;
-/** PDFs and the documents Inkpad turns into PDFs (Word, PowerPoint, Excel, CSV, text, Markdown, web pages). */
-export const ACCEPT_DOCS = `application/pdf,.pdf,${DOC_ACCEPT}`;
+export const ACCEPT_ALL = `image/*,application/pdf,.pdf,.json,application/json,${NOTE_EXT}`;
+export const ACCEPT_PDF = 'application/pdf,.pdf';
 export const isPdf = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
 export const isImage = (f) => f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(f.name);
 export const isBackup = (f) => /\.(json|inkpad)$/i.test(f.name) || f.type === 'application/json';
@@ -147,12 +143,6 @@ async function keepCopy(file, folderId) {
 
 const progress = (name) => (i, n) => toast(`Opening ${name}… page ${i} of ${n}`, 60000);
 
-/** A document that isn't a PDF or picture (Word, PowerPoint, Excel…) → a PDF File made from it on the device. */
-export async function convertDocument(file) {
-  toast(`Converting ${file.name}…`, 60000);
-  return documentToPdf(file, (i, n) => toast(`Converting ${file.name}… page ${i} of ${n}`, 60000));
-}
-
 /**
  * Turn files picked/shared/dropped from the device into notes.
  * PDFs → one A4 note each (pages on a locked "PDF" layer, write on top).
@@ -167,8 +157,6 @@ export async function convertDocument(file) {
 export async function noteFromDocument(file, { source = file.name, folderId = null } = {}) {
   // a PDF in the folder is a note already; a picture becomes a PDF next to it
   if (isPdf(file)) return store.idForPath(source);
-  // Word, PowerPoint, Excel…: a PDF of it is made next to it, and that PDF is the note
-  if (!isImage(file) && isDocument(file)) return store.idForPath(await store.addDocument(folderId, await convertDocument(file)));
   const n = newNote({ title: baseName(file), folderId, kind: 'a4', template: 'blank' });
   if (!isImage(file)) {
     const pages = await readPdf(file, progress(file.name));
@@ -186,20 +174,6 @@ export async function importFiles(files, folderId = null) {
   let openId = null;
   const images = files.filter(isImage);
   const pdfs = files.filter(isPdf);
-  // Word, PowerPoint and Excel files are notes themselves (officenote.js): kept in the folder and opened as they are,
-  // so your writing is saved into that same file
-  const office = files.filter((f) => /\.(docx|pptx|xlsx)$/i.test(f.name));
-  for (const f of office) {
-    const path = await keepCopy(f, folderId);
-    if (path) openId ??= store.idForPath(path);
-    else toast(`Couldn’t put ${f.name} in the notes folder`, 4000);
-  }
-  // other documents (text, Markdown, CSV, web pages, older formats Office can still open…): made into a PDF here
-  const docs = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f) && isDocument(f) && !office.includes(f));
-  for (const f of docs) {
-    try { pdfs.push(await convertDocument(f)); }
-    catch (e) { console.error(e); toast(`Couldn’t open ${f.name}${e?.message && !/^Could/.test(e.message) ? ` — ${e.message}` : ''}`, 5000); }
-  }
   for (const f of pdfs) {
     // the PDF itself is the note: put it in the folder and open it (no copy of its pages is made)
     const path = await keepCopy(f, folderId);
@@ -255,10 +229,8 @@ export async function importFiles(files, folderId = null) {
       }
     } catch { toast(`${f.name} is not an Inkpad backup`); }
   }
-  const skipped = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f) && !isDocument(f));
-  const old = skipped.filter(isOldFormat);
-  if (old.length) toast(oldFormatHelp(old[0]), 7000);
-  else if (skipped.length) toast(`Can’t open ${skipped.map((f) => f.name).join(', ')} — use PDFs, pictures, Word, PowerPoint, Excel, text or Inkpad files`, 5000);
+  const skipped = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f));
+  if (skipped.length) toast(`Can’t open ${skipped.map((f) => f.name).join(', ')} — use PDFs, pictures or Inkpad files`, 5000);
   else if (restored || keptNewer) toast(`Restored ${restored} note(s)${keptNewer ? ` · kept ${keptNewer} that are newer here` : ''}`, keptNewer ? 4000 : 2400);
   else if (openId) toast('Opened', 800);
   return openId;

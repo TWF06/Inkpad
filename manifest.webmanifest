@@ -12,9 +12,9 @@
     "action": "./share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
-    "params": { "title": "title", "files": [{ "name": "files", "accept": ["application/pdf", ".pdf", "image/*", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx", "text/csv", ".csv", "text/markdown", ".md", "text/plain", ".txt"] }] }
+    "params": { "title": "title", "files": [{ "name": "files", "accept": ["application/pdf", ".pdf", "image/*"] }] }
   },
   "file_handlers": [
-    { "action": "./", "accept": { "application/pdf": [".pdf"], "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"], "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"], "text/csv": [".csv"], "text/markdown": [".md"], "text/plain": [".txt"] } }
+    { "action": "./", "accept": { "application/pdf": [".pdf"], "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"] } }
   ]
 }

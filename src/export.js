@@ -1,21 +1,28 @@
-// "Save as" for the note being edited: its own file type (the PDF, Word, PowerPoint or Excel file the note is, or an
-// Inkpad file for an infinite canvas), PDF, or PNG pictures; or print. Nothing is preselected: you pick each time.
+// "Save as" for the note being edited: its own file (the PDF the note is, or an Inkpad file for an infinite canvas),
+// PDF, or PNG pictures; or print. Nothing is preselected: you pick each time.
 // On the tablet apps the file goes to the share sheet (Files, Drive, email…); in a browser it downloads.
 import * as R from './render.js';
 import { store, noteFileBlob, NOTE_EXT } from './store.js';
 import { modal, download, shareFile, toast } from './ui.js';
 import { isNative } from './native.js';
-import { loadZip } from './docconvert.js';
+
+// JSZip (vendored, a classic script) for "all pages as a ZIP"
+let zipLib;
+const loadZip = () => (zipLib ??= new Promise((res, rej) => {
+  const s = document.createElement('script');
+  s.src = new URL('../vendor/jszip/jszip.min.js', import.meta.url).href;
+  s.onload = () => res(window.JSZip);
+  s.onerror = () => { zipLib = null; rej(new Error('Could not load the ZIP library')); };
+  document.head.append(s);
+}));
 
 const SCALE = 2;   // pictures at twice the page size: sharp when zoomed or printed
 const PT = 0.75;   // CSS pixels → PDF points
-const KIND = { '.pdf': ['PDF', 'application/pdf'], '.docx': ['Word document', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-  '.pptx': ['PowerPoint slides', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-  '.xlsx': ['Excel workbook', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] };
+const KIND = { '.pdf': ['PDF', 'application/pdf'] };
 const safe = (s) => (s || 'Untitled').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
 const toBlob = (canvas, type, q) => new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('This page is too large to save as a picture'))), type, q));
 
-/** Every page drawn completely: the pictures on it (document pages too) loaded first. */
+/** Every page drawn completely: the pictures on it (PDF pages too) loaded first. */
 async function pageCanvas(note, i) {
   await R.preloadImages(note.pages[i].elements.filter((e) => e.type === 'image').map((e) => e.src));
   return R.renderPageCanvas(note, i, { scale: SCALE });
@@ -69,7 +76,7 @@ export async function saveAs(note, { currentPage = 0, save, print }) {
   }
 }
 
-/** The note's own file: the PDF / Word / PowerPoint / Excel file with the latest writing in it, or an Inkpad file. */
+/** The note's own file: the PDF with the latest writing in it, or an Inkpad file. */
 async function saveOwn(note, name, ext, save) {
   await save();
   if (!note.pdf) return download(`${name}${NOTE_EXT}`, noteFileBlob(note));

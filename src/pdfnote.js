@@ -38,11 +38,6 @@ function call(msg, transfer = []) {
   return new Promise((res, rej) => { const id = ++seq; waiting.set(id, { res, rej }); worker.postMessage({ ...msg, id }, transfer); });
 }
 
-// ---------- Word, PowerPoint and Excel files are notes too: officenote.js does those ----------
-const isOfficePath = (p) => /\.(docx|pptx|xlsx)$/i.test(p || '');
-let officeMod = null;
-const office = () => import('./officenote.js').then((m) => (officeMod = m));
-
 // ---------- ids ----------
 export const pdfId = pdfIdOf;
 const isBgLayer = (note, layerId) => note.layers.some((l) => l.id === layerId && l.bg);
@@ -69,7 +64,6 @@ async function fileState(path, lm, size) {
  * @returns the note, with the PDF pages as pictures on a locked bottom layer (drawn in the background; see renderPages)
  */
 export async function openPdfNote({ id, path, folderId, lm, size }) {
-  if (isOfficePath(path)) return (await office()).openOfficeNote({ id, path, folderId, lm, size });
   await (flushing.get(id) || Promise.resolve()).catch(() => {});   // closed a moment ago: let that write finish first
   if (flushing.has(id)) { lm = undefined; size = undefined; }
   const file = await store.openDocument(path);
@@ -110,8 +104,11 @@ export async function openPdfNote({ id, path, folderId, lm, size }) {
   if (!layers.some((l) => !l.bg)) layers.push({ id: uid(), name: 'Layer 1', visible: true, locked: false });
   const dataPages = clean && Array.isArray(data.pages) && data.pages.length === count ? clean.pages : null;
 
-  const pages = sizes.map((s, i) => {
+  const pages = sizes.map((s0, i) => {
     const dp = dataPages?.[i];
+    // a page made in Inkpad keeps the size it was made with (an A5 page stays A5, not scaled up to A4's length),
+    // as long as the PDF page still has that shape
+    const s = dp?.w && dp?.h && Math.abs(dp.w / dp.h - s0.w / s0.h) < 0.01 ? { w: dp.w, h: dp.h } : s0;
     const pid = dp?.id || `pg${i}`;
     return { id: pid, ...s, pdfIndex: i, elements: [
       { id: `bg_${pid}`.slice(0, 64), type: 'image', layerId: bg.id, x: 0, y: 0, w: s.w, h: s.h, src: BLANK },
@@ -145,7 +142,6 @@ export async function openPdfNote({ id, path, folderId, lm, size }) {
  * the ones on screen first. Returns false if stopped (stop() → true).
  */
 export async function renderPages(note, order, onPage, stop = () => false) {
-  if (note.docType) return true;   // Word / PowerPoint / Excel: the pages are drawn already
   const o = openDocs.get(note.id);
   if (!o) return;
   const lib = await loadPdfJs();
@@ -189,7 +185,6 @@ function blobUrl(id, blob) {
 }
 
 export function closePdfNote(id) {
-  officeMod?.closeOfficeNote(id);
   for (const u of urls.get(id) || []) URL.revokeObjectURL(u);
   urls.delete(id);
   const o = openDocs.get(id);
@@ -223,7 +218,6 @@ function editableData(note) {
 const timers = new Map();
 /** Keep the edits on the device now; write the PDF after a pause. */
 export async function stagePdfNote(note, onSaved) {
-  if (note.docType) return (await office()).stageOfficeNote(note, onSaved);
   const o = openDocs.get(note.id);
   if (!o) return;
   await kvSet(`journal:${o.path}`, { lm: o.lm, size: o.size, json: editableData(note), at: Date.now() });
@@ -233,10 +227,9 @@ export async function stagePdfNote(note, onSaved) {
 
 const flushing = new Map();
 /** Resolves once any write of this note into its PDF has finished (e.g. right after closing it). */
-export const settled = (id) => Promise.all([(flushing.get(id) || Promise.resolve()).catch(() => {}), officeMod?.settled(id)]).then(() => {});
+export const settled = (id) => (flushing.get(id) || Promise.resolve()).catch(() => {}).then(() => {});
 /** Write the PDF now (if there are edits not in it yet). */
 export function flushPdfNote(note) {
-  if (note.docType) return office().then((m) => m.flushOfficeNote(note));
   clearTimeout(timers.get(note.id));
   const prev = flushing.get(note.id) || Promise.resolve();
   const p = prev.catch(() => {}).then(() => writePdf(note));
@@ -441,8 +434,8 @@ export async function saveAsNewPdf(note) {
 }
 
 /** A new, empty page note: a PDF with the chosen paper. */
-export async function createPdfNote({ title = 'Untitled', folderId = null, template = 'lined', paper = 'white', landscape = false } = {}) {
-  const s = landscape ? { w: R.PAGE_H, h: R.PAGE_W } : { w: R.PAGE_W, h: R.PAGE_H };
+export async function createPdfNote({ title = 'Untitled', folderId = null, template = 'lined', paper = 'white', landscape = false, size = null } = {}) {
+  const s = size || (landscape ? { w: R.PAGE_H, h: R.PAGE_W } : { w: R.PAGE_W, h: R.PAGE_H });
   const note = {
     id: uid(), title, folderId, kind: 'a4', template: 'blank', newPaper: template, paper,
     layers: [{ id: uid(), name: 'PDF', visible: true, locked: true, bg: true }, { id: uid(), name: 'Layer 1', visible: true, locked: false }],

@@ -4,7 +4,7 @@ import { renderLibrary } from './library.js';
 import { openEditor } from './editor.js';
 import { openSplit, pickSplitNote } from './split.js';
 import { confirmBox, toast, h, icon, esc } from './ui.js';
-import { importFiles, isPdf, isImage, isDocument } from './importer.js';
+import { importFiles, isPdf, isImage } from './importer.js';
 import { isNative, isIOS, NotesFolder, nativeFile } from './native.js';
 
 const root = document.getElementById('app');
@@ -181,7 +181,7 @@ async function openShared() {
     }
   }
   // only what the share target advertises: a page on another site can also POST to /share-target
-  const usable = files.filter((f) => isPdf(f) || isImage(f) || isDocument(f));
+  const usable = files.filter((f) => isPdf(f) || isImage(f));
   if (!usable.length) { toast('Nothing was shared'); return location.replace('#/'); }
   const id = await importFiles(usable);
   location.replace(id ? `#/note/${id}` : '#/');

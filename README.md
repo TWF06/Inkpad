@@ -14,7 +14,7 @@ Notes are plain files in a folder on your device: no account, no server, no data
 - Palm rejection: the stylus writes, fingers pan and zoom
 
 **Notes**
-- A4 page notes (portrait or landscape) or an infinite canvas
+- Page notes in A4, A5, A3, B5, US Letter, US Legal, square or a custom size in mm (portrait or landscape), or an infinite canvas
 - Paper: blank, lined, grid, dot grid or Cornell; white, cream or dark
 - Layers, a page overview, an outline, and `[[Note title]]` links with backlinks
 - Split screen: two notes side by side, or the same note twice (e.g. read page 1 while writing on page 9)
@@ -22,10 +22,9 @@ Notes are plain files in a folder on your device: no account, no server, no data
 
 **Files**
 - Write on PDFs: your writing is saved into the PDF itself and stays editable
-- Opens Word, PowerPoint, Excel, CSV, Markdown, text and web pages by turning them into a PDF on the device
 - Nested folders, search, and a light, dark or automatic theme
 - Deleted notes go to the device's Trash / Recently Deleted
-- Share, export pages as PNG, or print / save as PDF
+- Save as PNG (one page, or all pages as a ZIP), PDF, an Inkpad file, or print
 
 ## Platforms
 
@@ -93,7 +92,7 @@ In Chrome on an Android tablet, menu → **Add to Home screen / Install app** in
 
 On first start Inkpad asks where to keep notes:
 
-- **Choose a folder** (recommended). Each note is a file there: an infinite canvas is a `<title>.inkpad` file, and a page note is a PDF with your writing inside it. The app's folder tree is `inkpad-folders.json`. You can see, copy, back up or share the files with the Files app, and change the folder any time from the library sidebar. Subfolders show in the library as folders (marked *on device*) with their notes, PDFs and pictures.
+- **Choose a folder** (recommended). Each note is a file there: an infinite canvas is a `<title>.inkpad` file and a page note is a PDF with your writing inside it. The app's folder tree is `inkpad-folders.json`. You can see, copy, back up or share the files with the Files app, and change the folder any time from the library sidebar. Subfolders show in the library as folders (marked *on device*) with their notes, PDFs and pictures.
 - **Keep them inside the app.** On the iPad this is Inkpad's own folder, which the Files app still shows. On Android and in browsers it is the app's private storage; use *Save a copy* or *Share…* in a note's menu to get a note out.
 
 **Backup:** copy the notes folder elsewhere. Any `.inkpad` file opens with **Open file**.
@@ -106,15 +105,13 @@ Nothing is uploaded: the app uses the device's own file chooser, gallery or came
 
 | Where | What you can do |
 |---|---|
-| Library → **Open file** | Open a PDF, a document (see below), pictures, or an Inkpad file. A PDF becomes a note you can write on; pictures become a note with one picture per page. |
+| Library → **Open file** | Open a PDF, pictures, or an Inkpad file. A PDF becomes a note you can write on; pictures become a note with one picture per page. |
 | Note → camera button | Take a photo and put it on the page you're writing on. |
-| Note → picture button | Pictures, a photo, or a PDF / document added after the current page. |
+| Note → picture button | Pictures, a photo, or a PDF added after the current page. |
 | Drag and drop, paste | Drop PDFs or pictures onto the library or a page; paste a picture or text onto the page. |
 | Other apps | **Share → Inkpad** (Android) or **Open in… → Inkpad** (iPad) for PDFs and pictures. |
 
-**Documents:** Word (.docx), PowerPoint (.pptx), Excel (.xlsx), CSV, text, Markdown and web pages are turned into a PDF on the device. The PDF is saved next to your notes and opens like any PDF. Word files are cut into pages between lines, each slide is one page, and wide sheets get a landscape page.
-
-The limits: the pages are pictures of the document, so text can't be selected. PowerPoint charts, SmartArt and EMF/WMF pictures aren't drawn, and Word headers and footers are left out. Older formats (.doc, .ppt, .xls, .rtf, .odt) need to be saved as .docx / .pptx / .xlsx or PDF first.
+Only PDFs and pictures are opened. For a Word, PowerPoint, Excel or other document, save or export it as a PDF first (every Office app can), then open that PDF.
 
 PDF pages sit on a locked **PDF** layer at the bottom, so the pen, eraser and lasso only touch your own writing on top.
 
@@ -144,9 +141,10 @@ src/                      the app (plain ES modules, no build step)
   split.js                split screen
   store.js                notes as files (picked folder, app storage, native plugin)
   pdfnote.js, pdfwork.js  PDF notes: writing into PDFs in a worker
-  importer.js, docconvert.js  pictures, PDFs and Office documents
+  importer.js             pictures and PDFs from the device
+  export.js               Save as: PNG, PDF, an Inkpad file or print
   theme.js                light / dark interface
-vendor/                   PDF.js, pdf-lib, JSZip, docx-preview, Capacitor runtime
+vendor/                   PDF.js, pdf-lib, JSZip, Capacitor runtime
 android/, ios/            the Capacitor apps
 sw.js                     offline cache and share target (web app)
 server.js                 local development server
@@ -156,4 +154,4 @@ server.js                 local development server
 
 ## Third-party libraries
 
-Bundled in `vendor/`, each with its license file: [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0), [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT), [JSZip](https://github.com/Stuk/jszip) (MIT / GPLv3), [docx-preview](https://github.com/VolodymyrBaydalka/docxjs) (Apache-2.0) and [Capacitor](https://capacitorjs.com) (MIT).
+Bundled in `vendor/`, each with its license file: [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0), [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT), [JSZip](https://github.com/Stuk/jszip) (MIT / GPLv3) and [Capacitor](https://capacitorjs.com) (MIT).

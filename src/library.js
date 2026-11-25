@@ -5,13 +5,30 @@ import { h, icon, esc, modal, confirmBox, promptBox, menu, toast, download, shar
 import { isNative, isIOS } from './native.js';
 
 // notes that are files: what to call them and how to hand them over
-const FILE_KIND = { '.pdf': 'PDF', '.docx': 'Word', '.pptx': 'PowerPoint', '.xlsx': 'Excel' };
-const fileKind = (n) => FILE_KIND[(/\.[a-z0-9]+$/i.exec(n.pdf || '')?.[0] || '').toLowerCase()] || 'PDF';
-const unit = (n) => ({ PowerPoint: 'slide', Excel: 'page' }[fileKind(n)] || 'page');
-const FILE_MIME = { '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+const fileKind = () => 'PDF';
+const unit = () => 'page';
+const FILE_MIME = { '.pdf': 'application/pdf' };
 import { importFiles, ACCEPT_ALL, noteFromDocument } from './importer.js';
-import { docLabel } from './docconvert.js';
+
+// page sizes for a new page note, portrait, in mm (Custom… takes any width × height in SIZE_MM)
+const PAGE_SIZES = {
+  a4: { label: 'A4 (210 × 297 mm)', w: 210, h: 297 },
+  a5: { label: 'A5 (148 × 210 mm)', w: 148, h: 210 },
+  a3: { label: 'A3 (297 × 420 mm)', w: 297, h: 420 },
+  b5: { label: 'B5 (176 × 250 mm)', w: 176, h: 250 },
+  letter: { label: 'US Letter (8.5 × 11 in)', w: 215.9, h: 279.4 },
+  legal: { label: 'US Legal (8.5 × 14 in)', w: 215.9, h: 355.6 },
+  square: { label: 'Square (210 × 210 mm)', w: 210, h: 210 },
+};
+const SIZE_MM = { min: 20, max: 1000 };
+const MM = 96 / 25.4;   // CSS px per mm
+/** The New note form's size → the page's size in CSS px. */
+function pageSizePx({ size, cw, ch, orient }) {
+  const clampMm = (v, d) => (Number.isFinite(v) && v > 0 ? Math.min(SIZE_MM.max, Math.max(SIZE_MM.min, v)) : d);
+  let { w, h } = size === 'custom' ? { w: clampMm(cw, 210), h: clampMm(ch, 297) } : PAGE_SIZES[size] || PAGE_SIZES.a4;
+  if (size !== 'custom' && orient === 'landscape') [w, h] = [h, w];
+  return { w: Math.round(w * MM), h: Math.round(h * MM) };
+}
 
 const COLORS = ['#3f3cbb', '#0f766e', '#b45309', '#be123c', '#4d7c0f', '#6d28d9', '#334155'];
 const PIN_KEY = 'inkpad.sidebarPinned';   // '0' = sidebar hidden until the menu button opens it
@@ -209,7 +226,7 @@ export async function renderLibrary(root, app, folderId = null) {
     for (const d of shownDocs) {
       const mb = d.size / 1048576;
       const card = h(`<div class="card note doc">
-        <div class="thumb"><div class="blank">${icon(d.kind === 'image' ? 'image' : 'pages', 32)}<span class="badge">${d.kind === 'pdf' ? 'PDF' : d.kind === 'image' ? 'Picture' : docLabel(d.name)}</span></div></div>
+        <div class="thumb"><div class="blank">${icon(d.kind === 'image' ? 'image' : 'pages', 32)}<span class="badge">${d.kind === 'pdf' ? 'PDF' : 'Picture'}</span></div></div>
         <div class="meta"><b>${esc(d.name.replace(/\.[^.]+$/, ''))}</b><span class="muted">${mb >= 1 ? mb.toFixed(1) + ' MB' : Math.max(1, Math.round(d.size / 1024)) + ' KB'} · tap to write on it</span></div></div>`);
       card.onclick = async () => {
         if (card.classList.contains('busy')) return;
@@ -238,25 +255,22 @@ export async function renderLibrary(root, app, folderId = null) {
         { name: 'kind', label: 'Type', type: 'choice', value: 'a4', options: [
           { value: 'a4', html: `<b>PDF pages</b><small>Page-by-page notebook, saved as a PDF</small>` },
           { value: 'infinite', html: `<b>Infinite canvas</b><small>Unbounded board for mind maps & sketches</small>` },
-          { value: 'docx', html: `<b>Word</b><small>Pages saved as a .docx file</small>` },
-          { value: 'pptx', html: `<b>PowerPoint</b><small>Slides saved as a .pptx file</small>` },
-          { value: 'xlsx', html: `<b>Excel</b><small>Sheets saved as an .xlsx file</small>` },
         ] },
-        { name: 'orient', label: 'Orientation', type: 'choice', value: 'portrait', when: { field: 'kind', is: ['a4', 'docx', 'xlsx'] }, options: [
-          { value: 'portrait', html: `<b>Vertical</b><small>Portrait A4</small>` },
-          { value: 'landscape', html: `<b>Horizontal</b><small>Landscape A4</small>` },
+        { name: 'size', label: 'Page size', type: 'select', value: 'a4', when: { field: 'kind', is: 'a4' },
+          options: [...Object.entries(PAGE_SIZES).map(([value, s]) => ({ value, label: s.label })), { value: 'custom', label: 'Custom…' }] },
+        { name: 'cw', label: 'Width (mm)', type: 'number', value: 210, min: SIZE_MM.min, max: SIZE_MM.max, step: 'any', when: { field: 'size', is: 'custom' } },
+        { name: 'ch', label: 'Height (mm)', type: 'number', value: 297, min: SIZE_MM.min, max: SIZE_MM.max, step: 'any', when: { field: 'size', is: 'custom' } },
+        { name: 'orient', label: 'Orientation', type: 'choice', value: 'portrait', when: { field: 'size', is: Object.keys(PAGE_SIZES).filter((k) => k !== 'square') }, options: [
+          { value: 'portrait', html: `<b>Vertical</b><small>Portrait</small>` },
+          { value: 'landscape', html: `<b>Horizontal</b><small>Landscape</small>` },
         ] },
         { name: 'template', label: 'Template', type: 'select', value: 'lined', options: Object.entries(TEMPLATES).map(([value, label]) => ({ value, label })) },
         { name: 'paper', label: 'Paper color', type: 'select', value: 'white', options: [{ value: 'white', label: 'White' }, { value: 'cream', label: 'Cream' }, { value: 'dark', label: 'Dark' }] },
       ],
     });
     if (!r) return;
-    const opts = { title: r.title.trim() || 'Untitled', folderId, kind: r.kind, template: r.template, paper: r.paper, landscape: r.orient === 'landscape' };
-    // page notes are PDFs, Word, PowerPoint or Excel files in the folder; an infinite canvas is an .inkpad file
-    if (['docx', 'pptx', 'xlsx'].includes(r.kind)) {
-      try { return app.go(`/note/${await (await import('./officenote.js')).createOfficeNote({ ...opts, type: r.kind })}`); }
-      catch (err) { console.error(err); toast(`Couldn’t create the ${{ docx: 'Word', pptx: 'PowerPoint', xlsx: 'Excel' }[r.kind]} file`, 4000); return; }
-    }
+    const opts = { title: r.title.trim() || 'Untitled', folderId, kind: r.kind, template: r.template, paper: r.paper, size: pageSizePx(r) };
+    // page notes are PDFs in the folder; an infinite canvas is an .inkpad file
     if (r.kind === 'a4') {
       try { return app.go(`/note/${await (await import('./pdfnote.js')).createPdfNote(opts)}`); }
       catch (err) { console.error(err); toast('Couldn’t create the PDF', 4000); return; }

@@ -378,13 +378,11 @@ export function pdfIdOf(path) {
   return `p${x.toString(36)}${path.length.toString(36)}`;
 }
 const isPdfPath = (p) => /\.pdf$/i.test(p);
-// files that are notes themselves: PDFs (pdfnote.js) and Word / PowerPoint / Excel files (officenote.js)
-const FILE_NOTE_RE = /\.(pdf|docx|pptx|xlsx)$/i;
+// files that are notes themselves: PDFs (pdfnote.js)
+const FILE_NOTE_RE = /\.pdf$/i;
 const isFileNote = (p) => FILE_NOTE_RE.test(p);
 const fileTitle = (p) => nameOf(p).replace(FILE_NOTE_RE, '');
-const docTypeOf = (p) => /\.(docx|pptx|xlsx)$/i.exec(p)?.[1].toLowerCase() || null;
-const MIME = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+const MIME = { pdf: 'application/pdf' };
 const mimeOf = (p) => MIME[/\.([a-z0-9]+)$/i.exec(p)?.[1].toLowerCase()] || 'application/octet-stream';
 const pdfNote = () => import('./pdfnote.js');
 
@@ -473,7 +471,7 @@ async function scan() {
       if (!c || c.lm !== f.lastModified || c.size !== f.size) {
         const keep = c && c.meta.pdf ? c.meta : {};
         c = { lm: f.lastModified, size: f.size, meta: {
-          id: pdfIdOf(path), title: fileTitle(path), kind: 'a4', pdf: path, docType: docTypeOf(path), folderId: null,
+          id: pdfIdOf(path), title: fileTitle(path), kind: 'a4', pdf: path, folderId: null,
           pageCount: keep.pageCount || 0, thumb: keep.thumbFor && keep.thumbFor.split('|')[1] === String(f.size) ? keep.thumb : null,   // see sameFile in pdfnote.js thumbFor: keep.thumbFor || '',
           text: '', updatedAt: f.lastModified, createdAt: keep.createdAt || f.lastModified,
         } };
@@ -721,10 +719,10 @@ const editFolders = (fn) => serial(async () => {
 const putFolder = (f) => (f.dir ? Promise.resolve() : editFolders((l) => [...l.filter((x) => x.id !== f.id), f]));
 const delFolder = (id) => editFolders((l) => l.filter((x) => x.id !== id));
 
-const DOC_RE = /\.(pdf|png|jpe?g|webp|gif|bmp|heic|heif|docx|pptx|ppsx|xlsx|xlsm|csv|tsv|txt|md|markdown|html?)$/i;
+const DOC_RE = /\.(pdf|png|jpe?g|webp|gif|bmp|heic|heif)$/i;
 const PICTURE_RE = /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i;
 
-/** PDFs, pictures and documents (Word, PowerPoint, Excel…) in the notes folder and its subfolders that don't have a note yet (once opened, the note stands for them). */
+/** PDFs and pictures in the notes folder and its subfolders that don't have a note yet (once opened, the note stands for them). */
 async function documents() {
   await queue;
   if (!fresh()) await scan();
@@ -735,7 +733,7 @@ function docsNow() {
   const pdfs = new Set(listing.files.filter((f) => isPdfPath(f.path)).map((f) => f.path.toLowerCase().replace(/\.pdf$/, '')));
   return listing.files
     .filter((f) => DOC_RE.test(f.path) && !isFileNote(f.path) && !used.has(f.path.toLowerCase()) && !pdfs.has(f.path.toLowerCase().replace(/\.[^./]+$/, '')))
-    .map((f) => ({ path: f.path, name: nameOf(f.path), size: f.size, lastModified: f.lastModified, folderId: folderOfPath(f.path), kind: /\.pdf$/i.test(f.path) ? 'pdf' : PICTURE_RE.test(f.path) ? 'image' : 'doc' }));
+    .map((f) => ({ path: f.path, name: nameOf(f.path), size: f.size, lastModified: f.lastModified, folderId: folderOfPath(f.path), kind: /\.pdf$/i.test(f.path) ? 'pdf' : 'image' }));
 }
 async function openDocument(path) { need(); return root.readFile(path); }
 

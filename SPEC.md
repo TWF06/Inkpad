@@ -24,13 +24,14 @@ Inkpad is a handwriting and PDF notes app for Android tablets and iPads with a s
 | Infinite folder system | ✅ | Nested folders, move, rename, search |
 | Local storage | ✅ | One `.inkpad` file per note in a folder on the device; no database |
 | Local backup | ✅ | Notes are files: copy the folder. Old JSON backups still import via Open file |
-| Export | ✅ | PNG per page, PDF via print |
+| Export (Save as) | ✅ | PNG (one page or all as a ZIP), PDF, `.inkpad` copy, or print |
 | Timer (countdown / Pomodoro) | ✅ | Floating widget |
 | Dark theme | ✅ | Auto / Light / Dark in the library sidebar; only the interface, paper keeps its own colour |
 | Deleted notes → device Trash | ✅ | Android 11+: Android's own prompt, then Files app → Trash for 30 days. Deleted for good (after asking) only where there's no Trash |
 | Undo / redo, zoom / pan, palm rejection | ✅ | Stylus-only is the default; toggle in toolbar |
 | PDF import & annotation | ✅ | PDF.js (vendored); pages on a locked background layer |
-| Word / PowerPoint / Excel / CSV / text / Markdown / HTML | ✅ | Converted to a PDF on the device (`src/docconvert.js`), then a normal PDF note. Old binary formats (.doc/.ppt/.xls) get a "save as .docx/PDF" message |
+| Page sizes | ✅ | A4, A5, A3, B5, US Letter, US Legal, square or custom mm, portrait or landscape, chosen at creation |
+| Other file types (Word, PowerPoint, Excel, text…) | ✖ | Removed: only PDFs and pictures open. Save other documents as PDF first |
 | Open files from device / camera / share sheet | ✅ | File chooser, camera capture, drag-drop, paste, PWA share target |
 | iPad app | ✅ | Capacitor iOS project in `ios/` (iPadOS 17.4+); native `NotesFolderPlugin.swift` mirrors the Android plugin. Built with Xcode on a Mac |
 | Split screen | ✅ | Two notes, or the same note twice (one shared note and undo history, changes show in both). Drag the bar to resize; top / bottom on an upright tablet. Keyboard goes to the pane last touched |
@@ -40,9 +41,9 @@ Inkpad is a handwriting and PDF notes app for Android tablets and iPads with a s
 
 ## Architecture
 
-- Static web app, no build step. Libraries vendored in `vendor/`: PDF.js, pdf-lib, JSZip, docx-preview. `node server.js` serves it on http://localhost:5173.
+- Static web app, no build step. Libraries vendored in `vendor/`: PDF.js, pdf-lib, JSZip (for Save as → all pages as a ZIP). `node server.js` serves it on http://localhost:5173.
 - `src/importer.js` — reading pictures / PDFs / backups from the device.
-- `src/docconvert.js` — Word (docx-preview), PowerPoint, Excel, CSV, text, Markdown, HTML → page pictures → a PDF (pdf-lib). Laid out in a hidden frame, drawn through SVG `foreignObject`.
+- `src/export.js` — the Save as dialog and its PNG / ZIP / PDF writers.
 - `sw.js` — offline cache + share-target receiver.
 - `src/store.js` — notes as files: a user-picked folder (File System Access API) or the app's private folder (OPFS). Only the picked folder's handle is kept in IndexedDB, since browsers can remember it nowhere else.
 - `src/library.js` — folder / note browser.

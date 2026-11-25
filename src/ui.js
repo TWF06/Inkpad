@@ -102,19 +102,21 @@ export function modal({ title, message = '', fields = [], ok = 'OK', cancel = 'C
       } else if (f.type === 'choice') {
         input = `<div class="choice">${f.options.map((o) => `<label><input type="radio" name="${f.name}" value="${esc(o.value)}" ${o.value === f.value ? 'checked' : ''}/><span>${o.html ?? esc(o.label)}</span></label>`).join('')}</div>`;
       } else {
-        input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(f.value ?? '')}" ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} autocomplete="off"/>`;
+        input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(f.value ?? '')}" ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} ${f.step != null ? `step="${f.step}"` : ''} autocomplete="off"/>`;
       }
       const row = h(`<div class="field"><label for="${id}">${esc(f.label)}</label>${input}</div>`);
       if (f.when) row.dataset.when = f.name;
       box.append(row);
     }
     // fields with `when: { field, is }` only show while that other field has that value (or one of them, if a list)
+    // and is showing itself
     const form = dlg.querySelector('form');
+    const rowOf = (name) => box.querySelector(`[data-when="${name}"]`);
     // a `required` field (e.g. a choice with nothing picked yet) keeps the OK button off until it has a value
     const okBtn = form.querySelector('button[value=ok]');
     const showFields = () => {
       const data = new FormData(form);
-      for (const f of fields) if (f.when) box.querySelector(`[data-when="${f.name}"]`).hidden = ![].concat(f.when.is).includes(data.get(f.when.field));
+      for (const f of fields) if (f.when) rowOf(f.name).hidden = !!rowOf(f.when.field)?.hidden || ![].concat(f.when.is).includes(data.get(f.when.field));
       okBtn.disabled = fields.some((f) => f.required && !data.get(f.name));
     };
     form.addEventListener('change', showFields);
