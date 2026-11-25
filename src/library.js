@@ -3,6 +3,13 @@ import { store, uid, newNote, noteText, storagePlace, canPickFolder, chooseFolde
 import { TEMPLATES } from './render.js';
 import { h, icon, esc, modal, confirmBox, promptBox, menu, toast, download, shareFile, pickFile, onFileDrop } from './ui.js';
 import { isNative, isIOS } from './native.js';
+
+// notes that are files: what to call them and how to hand them over
+const FILE_KIND = { '.pdf': 'PDF', '.docx': 'Word', '.pptx': 'PowerPoint', '.xlsx': 'Excel' };
+const fileKind = (n) => FILE_KIND[(/\.[a-z0-9]+$/i.exec(n.pdf || '')?.[0] || '').toLowerCase()] || 'PDF';
+const unit = (n) => ({ PowerPoint: 'slide', Excel: 'page' }[fileKind(n)] || 'page');
+const FILE_MIME = { '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 import { importFiles, ACCEPT_ALL, noteFromDocument } from './importer.js';
 import { docLabel } from './docconvert.js';
 
@@ -167,25 +174,26 @@ export async function renderLibrary(root, app, folderId = null) {
     for (const n of list) {
       const card = h(`<div class="card note">
         <div class="thumb">${n.thumb ? `<img src="${esc(n.thumb)}" alt="">` : `<div class="blank">${icon('note', 32)}</div>`}</div>
-        <div class="meta"><b>${esc(n.title)}</b><span class="muted">${n.pdf ? (n.pageCount ? `PDF · ${n.pageCount} page${n.pageCount === 1 ? '' : 's'}` : 'PDF') : n.kind === 'a4' ? `${n.pageCount} page${n.pageCount === 1 ? '' : 's'}` : 'Infinite canvas'} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
+        <div class="meta"><b>${esc(n.title)}</b><span class="muted">${n.pdf ? (n.pageCount ? `${fileKind(n)} · ${n.pageCount} ${unit(n)}${n.pageCount === 1 ? '' : 's'}` : fileKind(n)) : n.kind === 'a4' ? `${n.pageCount} page${n.pageCount === 1 ? '' : 's'}` : 'Infinite canvas'} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
         ${q && n.folderId ? `<span class="muted small">in ${esc(pathOf(n.folderId).map((f) => f.name).join(' / '))}</span>` : ''}</div>
         <button class="icon-btn sm more" title="More">${icon('more', 18)}</button></div>`);
       card.onclick = (e) => { if (!e.target.closest('.more')) app.go(`/note/${n.id}`); };
       // the list only has summaries: changes load the whole note first
       const full = async () => { const x = await store.getNote(n.id); if (!x) { toast('This note is gone'); reload(); } return x; };
       if (n.pdf) card.dataset.pdf = n.pdf;
+      const ext = n.pdf ? (/\.[a-z0-9]+$/i.exec(n.pdf)?.[0] || '.pdf').toLowerCase() : '';
       card.querySelector('.more').onclick = (e) => menu(e.currentTarget, n.pdf ? [
-        // a PDF note is the PDF file: these act on the file in the folder
-        { label: 'Rename', icon: 'text', action: async () => { const t = await promptBox('Rename PDF', n.title, 'Name'); if (t) { try { await store.moveFile(n.pdf, { title: t }); } catch (err) { console.error(err); toast('Couldn’t rename it', 3000); } reload(); } } },
-        { label: 'Move to…', icon: 'folder', action: async () => { const to = await folderPicker('Move PDF'); if (to !== undefined) { try { await store.moveFile(n.pdf, { folderId: to }); } catch (err) { console.error(err); toast('Couldn’t move it', 3000); } reload(); } } },
-        { label: 'Duplicate', icon: 'copy', action: async () => { const f = await store.openDocument(n.pdf); await store.createFile(byId.get(n.folderId)?.id ?? null, `${n.title} copy`, '.pdf', new Uint8Array(await f.arrayBuffer())); reload(); } },
+        // a PDF / Word / PowerPoint / Excel note is that file: these act on the file in the folder
+        { label: 'Rename', icon: 'text', action: async () => { const t = await promptBox(`Rename ${fileKind(n)} file`, n.title, 'Name'); if (t) { try { await store.moveFile(n.pdf, { title: t }); } catch (err) { console.error(err); toast('Couldn’t rename it', 3000); } reload(); } } },
+        { label: 'Move to…', icon: 'folder', action: async () => { const to = await folderPicker(`Move ${fileKind(n)} file`); if (to !== undefined) { try { await store.moveFile(n.pdf, { folderId: to }); } catch (err) { console.error(err); toast('Couldn’t move it', 3000); } reload(); } } },
+        { label: 'Duplicate', icon: 'copy', action: async () => { const f = await store.openDocument(n.pdf); await store.createFile(byId.get(n.folderId)?.id ?? null, `${n.title} copy`, ext, new Uint8Array(await f.arrayBuffer())); reload(); } },
         // the tablet: Android's Share menu (Drive, email, chats, Files…); a browser: download the file
-        { label: isNative ? 'Share…' : 'Save a copy (.pdf)', icon: isNative ? 'share' : 'download', action: async () => {
-          await (await import('./pdfnote.js')).settled(n.id);   // just closed: the writing is still going into the PDF
-          if (isNative) shareFile(`${n.title}.pdf`, { path: n.pdf }, 'application/pdf');
-          else download(`${n.title}.pdf`, await store.openDocument(n.pdf));
+        { label: isNative ? 'Share…' : `Save a copy (${ext})`, icon: isNative ? 'share' : 'download', action: async () => {
+          await (await import('./pdfnote.js')).settled(n.id);   // just closed: the writing may still be going into the file
+          if (isNative) shareFile(`${n.title}${ext}`, { path: n.pdf }, FILE_MIME[ext] || 'application/octet-stream');
+          else download(`${n.title}${ext}`, await store.openDocument(n.pdf));
         } },
-        { label: 'Delete', icon: 'trash', danger: true, action: async () => { if (await deleteNotes([n], `“${n.title}.pdf”`)) reload(); } },
+        { label: 'Delete', icon: 'trash', danger: true, action: async () => { if (await deleteNotes([n], `“${n.title}${ext}”`)) reload(); } },
       ] : [
         { label: 'Rename', icon: 'text', action: async () => { const t = await promptBox('Rename note', n.title, 'Title'); const x = t && (await full()); if (x) { await store.putNote({ ...x, title: t, updatedAt: Date.now() }); reload(); } } },
         { label: 'Move to…', icon: 'folder', action: async () => { const to = await folderPicker('Move note'); const x = to !== undefined && (await full()); if (x) { await store.putNote({ ...x, folderId: to }); reload(); } } },
@@ -227,11 +235,14 @@ export async function renderLibrary(root, app, folderId = null) {
       title: 'New note', ok: 'Create',
       fields: [
         { name: 'title', label: 'Title', value: 'Untitled' },
-        { name: 'kind', label: 'Paper', type: 'choice', value: 'a4', options: [
-          { value: 'a4', html: `<b>A4 pages</b><small>Familiar page-by-page notebook</small>` },
+        { name: 'kind', label: 'Type', type: 'choice', value: 'a4', options: [
+          { value: 'a4', html: `<b>PDF pages</b><small>Page-by-page notebook, saved as a PDF</small>` },
           { value: 'infinite', html: `<b>Infinite canvas</b><small>Unbounded board for mind maps & sketches</small>` },
+          { value: 'docx', html: `<b>Word</b><small>Pages saved as a .docx file</small>` },
+          { value: 'pptx', html: `<b>PowerPoint</b><small>Slides saved as a .pptx file</small>` },
+          { value: 'xlsx', html: `<b>Excel</b><small>Sheets saved as an .xlsx file</small>` },
         ] },
-        { name: 'orient', label: 'Orientation', type: 'choice', value: 'portrait', when: { field: 'kind', is: 'a4' }, options: [
+        { name: 'orient', label: 'Orientation', type: 'choice', value: 'portrait', when: { field: 'kind', is: ['a4', 'docx', 'xlsx'] }, options: [
           { value: 'portrait', html: `<b>Vertical</b><small>Portrait A4</small>` },
           { value: 'landscape', html: `<b>Horizontal</b><small>Landscape A4</small>` },
         ] },
@@ -241,7 +252,11 @@ export async function renderLibrary(root, app, folderId = null) {
     });
     if (!r) return;
     const opts = { title: r.title.trim() || 'Untitled', folderId, kind: r.kind, template: r.template, paper: r.paper, landscape: r.orient === 'landscape' };
-    // page notes are PDFs (a real folder in the device holds them); an infinite canvas is an .inkpad file
+    // page notes are PDFs, Word, PowerPoint or Excel files in the folder; an infinite canvas is an .inkpad file
+    if (['docx', 'pptx', 'xlsx'].includes(r.kind)) {
+      try { return app.go(`/note/${await (await import('./officenote.js')).createOfficeNote({ ...opts, type: r.kind })}`); }
+      catch (err) { console.error(err); toast(`Couldn’t create the ${{ docx: 'Word', pptx: 'PowerPoint', xlsx: 'Excel' }[r.kind]} file`, 4000); return; }
+    }
     if (r.kind === 'a4') {
       try { return app.go(`/note/${await (await import('./pdfnote.js')).createPdfNote(opts)}`); }
       catch (err) { console.error(err); toast('Couldn’t create the PDF', 4000); return; }
@@ -297,7 +312,7 @@ export async function renderLibrary(root, app, folderId = null) {
         const card = [...el.querySelectorAll('.card[data-pdf]')].find((c) => c.dataset.pdf === n.pdf);
         if (card) {
           card.querySelector('.thumb').innerHTML = `<img src="${esc(t.thumb)}" alt="">`;
-          card.querySelector('.meta .muted').textContent = `PDF · ${t.pageCount} page${t.pageCount === 1 ? '' : 's'} · ${new Date(n.updatedAt).toLocaleDateString()}`;
+          card.querySelector('.meta .muted').textContent = `${t.pageCount ? `${fileKind(n)} · ${t.pageCount} ${unit(n)}${t.pageCount === 1 ? '' : 's'}` : fileKind(n)} · ${new Date(n.updatedAt).toLocaleDateString()}`;
         }
       } catch (err) { console.warn('No thumbnail for', n.pdf, err); }
     }

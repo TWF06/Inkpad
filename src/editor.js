@@ -73,6 +73,10 @@ export async function openEditor(root, noteId, app, opts = {}) {
     }
   }
   const pdfMod = note.pdf ? await import('./pdfnote.js') : null;
+  // a Word / PowerPoint / Excel note (officenote.js): the file's own pages are fixed; pages added in Inkpad are not
+  const DOC_NAME = { docx: 'Word', pptx: 'PowerPoint', xlsx: 'Excel' };
+  const fileExt = note.pdf ? (/\.[a-z0-9]+$/i.exec(note.pdf)?.[0] || '.pdf') : '';
+  const fixedPage = (i) => !!note.docType && note.pages[i]?.docIndex != null;
 
   const settings = loadSettings();
   const saveSettings = () => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -901,6 +905,8 @@ export async function openEditor(root, noteId, app, opts = {}) {
         toast(`${added.length > 1 ? `Added ${added.length} pictures` : 'Picture added'} — drag to move, corner to resize${returnTool ? ', then keep writing' : ''}`, 3500);
       }
     }
+    // a Word / PowerPoint / Excel note can't hold PDF pages (only pictures and writing go into those files)
+    if (pdfs.length && note.docType) { toast(`PDF pages can’t go into a ${DOC_NAME[note.docType]} file. Add them as pictures, or open the PDF as a note of its own.`, 5000); pdfs.length = 0; }
     for (const f of pdfs) {
       let pages;
       try { pages = await readPdf(f, (i, n) => toast(`Reading ${f.name}… page ${i} of ${n}`, 60000)); }
@@ -1603,6 +1609,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
     },
     deletePage(i) {
       if (note.pages.length < 2) return toast('A note needs at least one page');
+      if (fixedPage(i)) return toast(`This page is part of the ${DOC_NAME[note.docType]} file: delete it in ${DOC_NAME[note.docType]}. Pages you added in Inkpad can be deleted here.`, 5000);
       pushHistory();
       note.pages.splice(i, 1);
       note.outline = note.outline.filter((o) => o.page !== i).map((o) => (o.page > i ? { ...o, page: o.page - 1 } : o));
@@ -1611,6 +1618,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
     movePage(i, d) {
       const j = i + d;
       if (j < 0 || j >= note.pages.length) return;
+      if (fixedPage(i) && fixedPage(j)) return toast(`The ${DOC_NAME[note.docType]} file’s own pages keep their order. Pages you added in Inkpad can be moved.`, 5000);
       pushHistory();
       [note.pages[i], note.pages[j]] = [note.pages[j], note.pages[i]];
       note.outline = note.outline.map((o) => (o.page === i ? { ...o, page: j } : o.page === j ? { ...o, page: i } : o));
@@ -1735,8 +1743,8 @@ export async function openEditor(root, noteId, app, opts = {}) {
         // write the PDF in the background so the library opens at once
         const name = note.title;
         store.flush(note)
-          .then((wrote) => { if (wrote) toast(`Saved into ${name}.pdf`, 1600); })
-          .catch((err) => { console.error(err); toast(`Couldn’t write into ${name}.pdf. Your writing is kept on this device and saved next time.`, 6000); })
+          .then((wrote) => { if (wrote) toast(`Saved into ${name}${fileExt}`, 1600); })
+          .catch((err) => { console.error(err); toast(`Couldn’t write into ${name}${fileExt}. Your writing is kept on this device and saved next time.`, 6000); })
           .finally(() => pdfMod.closePdfNote(note.id));
       }
     },

@@ -1,8 +1,8 @@
 // Service worker: offline app shell + receiving files shared from other apps ("Share → Inkpad").
-const SHELL = 'inkpad-shell-v7';
+const SHELL = 'inkpad-shell-v8';
 const SHARED = 'inkpad-shared';
 const FILES = ['./', './index.html', './styles.css', './icon.svg', './manifest.webmanifest',
-  './src/app.js', './src/theme.js', './src/split.js', './src/export.js', './src/editor.js', './src/library.js', './src/panels.js', './src/render.js', './src/shapes.js',
+  './src/app.js', './src/theme.js', './src/split.js', './src/export.js', './src/officenote.js', './src/officefile.js', './src/editor.js', './src/library.js', './src/panels.js', './src/render.js', './src/shapes.js',
   './src/store.js', './src/timer.js', './src/ui.js', './src/importer.js', './src/native.js', './src/pdfnote.js', './src/pdfwork.js', './src/docconvert.js', './vendor/capacitor/capacitor.js',
   './vendor/pdfjs/pdf.min.mjs', './vendor/pdfjs/pdf.worker.min.mjs', './vendor/pdf-lib/pdf-lib.esm.min.js',
   './vendor/jszip/jszip.min.js', './vendor/docx-preview/docx-preview.min.js'];

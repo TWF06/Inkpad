@@ -378,6 +378,14 @@ export function pdfIdOf(path) {
   return `p${x.toString(36)}${path.length.toString(36)}`;
 }
 const isPdfPath = (p) => /\.pdf$/i.test(p);
+// files that are notes themselves: PDFs (pdfnote.js) and Word / PowerPoint / Excel files (officenote.js)
+const FILE_NOTE_RE = /\.(pdf|docx|pptx|xlsx)$/i;
+const isFileNote = (p) => FILE_NOTE_RE.test(p);
+const fileTitle = (p) => nameOf(p).replace(FILE_NOTE_RE, '');
+const docTypeOf = (p) => /\.(docx|pptx|xlsx)$/i.exec(p)?.[1].toLowerCase() || null;
+const MIME = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+const mimeOf = (p) => MIME[/\.([a-z0-9]+)$/i.exec(p)?.[1].toLowerCase()] || 'application/octet-stream';
 const pdfNote = () => import('./pdfnote.js');
 
 const folderOfPath = (path) => (dirOf(path) ? dirFolderId(dirOf(path)) : null);
@@ -459,13 +467,13 @@ async function scan() {
   fileOf.clear();
   for (const f of listing.files) {
     const path = f.path;
-    if (isPdfPath(path)) {
+    if (isFileNote(path)) {
       seen.add(path);
       let c = entries.get(path);
       if (!c || c.lm !== f.lastModified || c.size !== f.size) {
         const keep = c && c.meta.pdf ? c.meta : {};
         c = { lm: f.lastModified, size: f.size, meta: {
-          id: pdfIdOf(path), title: nameOf(path).replace(/\.pdf$/i, ''), kind: 'a4', pdf: path, folderId: null,
+          id: pdfIdOf(path), title: fileTitle(path), kind: 'a4', pdf: path, docType: docTypeOf(path), folderId: null,
           pageCount: keep.pageCount || 0, thumb: keep.thumbFor && keep.thumbFor.split('|')[1] === String(f.size) ? keep.thumb : null,   // see sameFile in pdfnote.js thumbFor: keep.thumbFor || '',
           text: '', updatedAt: f.lastModified, createdAt: keep.createdAt || f.lastModified,
         } };
@@ -532,7 +540,7 @@ async function readNote(id, path) {
 async function allNotes() {
   await listNotes();
   const out = [];
-  for (const [id, path] of [...fileOf]) { if (isPdfPath(path)) continue; const n = await readNote(id, path); if (n) out.push(n); }
+  for (const [id, path] of [...fileOf]) { if (isFileNote(path)) continue; const n = await readNote(id, path); if (n) out.push(n); }
   return out;
 }
 
@@ -542,7 +550,7 @@ async function getNote(id) {
   let path = fileOf.get(id);
   if (!path || !entries.has(path)) { await scan(); path = fileOf.get(id); }
   if (!path) return undefined;
-  if (isPdfPath(path)) {
+  if (isFileNote(path)) {
     const c = entries.get(path);
     return (await pdfNote()).openPdfNote({ id, path, folderId: folderOfPath(path), lm: c?.lm, size: c?.size });
   }
@@ -565,7 +573,7 @@ function setPdfMeta(path, { thumb, pageCount }) {
 function replaceFile(path, bytes) {
   return serial(async () => {
     need();
-    const blob = new Blob([bytes], { type: isPdfPath(path) ? 'application/pdf' : 'application/octet-stream' });
+    const blob = new Blob([bytes], { type: mimeOf(path) });
     const f = await root.replaceBlob(path, blob);
     noteListed(path, f);
     const c = entries.get(path);
@@ -584,7 +592,7 @@ function createFile(folderId, title, ext, bytes) {
     const taken = new Set(listing.files.map((f) => f.path.toLowerCase()));
     let path;
     for (let i = 1; ; i++) { path = joinPath(dir, `${base}${i > 1 ? ` (${i})` : ''}${ext}`); if (!taken.has(path.toLowerCase())) break; }
-    const f = await root.writeBlob(path, new Blob([bytes], { type: ext === '.pdf' ? 'application/pdf' : 'application/octet-stream' }));
+    const f = await root.writeBlob(path, new Blob([bytes], { type: mimeOf(path) }));
     path = f.path || path;
     noteListed(path, f);
     return path;
@@ -606,7 +614,7 @@ function moveFile(path, { title, folderId } = {}) {
     to = f.path || to;
     const c = entries.get(path);
     entries.delete(path); noteListed(path, null); noteListed(to, f);
-    if (c) entries.set(to, { ...c, meta: { ...c.meta, id: pdfIdOf(to), pdf: to, title: nameOf(to).replace(/\.pdf$/i, '') } });
+    if (c) entries.set(to, { ...c, meta: { ...c.meta, id: pdfIdOf(to), pdf: to, title: fileTitle(to) } });
     scannedAt = 0;
     saveIndexSoon();
     (await pdfNote()).forgetPdf(path);
@@ -664,7 +672,7 @@ function delNote(id) {
     if (!path) return;
     await root.remove(path);
     entries.delete(path); fileOf.delete(id); noteListed(path, null);
-    if (isPdfPath(path)) (await pdfNote()).forgetPdf(path);
+    if (isFileNote(path)) (await pdfNote()).forgetPdf(path);
     saveIndexSoon();
   });
 }
@@ -685,7 +693,7 @@ function trashNotes(ids) {
     for (const id of ids) fileOf.delete(id);
     for (const path of paths) {
       entries.delete(path); noteListed(path, null);
-      if (isPdfPath(path)) (await pdfNote()).forgetPdf(path);
+      if (isFileNote(path)) (await pdfNote()).forgetPdf(path);
     }
     saveIndexSoon();
     return 'trashed';
@@ -726,7 +734,7 @@ function docsNow() {
   const used = new Set([...entries.values()].map((c) => c.meta.source?.toLowerCase()).filter(Boolean));
   const pdfs = new Set(listing.files.filter((f) => isPdfPath(f.path)).map((f) => f.path.toLowerCase().replace(/\.pdf$/, '')));
   return listing.files
-    .filter((f) => DOC_RE.test(f.path) && !isPdfPath(f.path) && !used.has(f.path.toLowerCase()) && !pdfs.has(f.path.toLowerCase().replace(/\.[^./]+$/, '')))
+    .filter((f) => DOC_RE.test(f.path) && !isFileNote(f.path) && !used.has(f.path.toLowerCase()) && !pdfs.has(f.path.toLowerCase().replace(/\.[^./]+$/, '')))
     .map((f) => ({ path: f.path, name: nameOf(f.path), size: f.size, lastModified: f.lastModified, folderId: folderOfPath(f.path), kind: /\.pdf$/i.test(f.path) ? 'pdf' : PICTURE_RE.test(f.path) ? 'image' : 'doc' }));
 }
 async function openDocument(path) { need(); return root.readFile(path); }
@@ -758,7 +766,7 @@ function addDocument(folderId, file) {
 }
 
 export const store = { allFolders, putFolder, delFolder, listNotes, allNotes, getNote, putNote, delNote, trashNotes, documents, openDocument, addDocument, snapshot, refresh,
-  setPdfMeta, replaceFile, createFile, moveFile, flush, idForPath: (p) => (isPdfPath(p) ? pdfIdOf(p) : null),
+  setPdfMeta, replaceFile, createFile, moveFile, flush, idForPath: (p) => (isFileNote(p) ? pdfIdOf(p) : null),
   hasFile: (p) => !!p && listing.files.some((f) => f.path.toLowerCase() === p.toLowerCase()) };
 
 /** A note file's contents, for "Save a copy". */

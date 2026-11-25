@@ -19,10 +19,10 @@ function db() {
   dbp ??= new Promise((res, rej) => { const r = indexedDB.open('inkpad-handles', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => { r.result.onclose = () => { dbp = null; }; res(r.result); }; r.onerror = () => { dbp = null; rej(r.error); }; });
   return dbp;
 }
-async function kvGet(key) {
+export async function kvGet(key) {
   try { const d = await db(); return await new Promise((res) => { const q = d.transaction('h').objectStore('h').get(key); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); }); } catch { return null; }
 }
-async function kvSet(key, value) {
+export async function kvSet(key, value) {
   try { const d = await db(); await new Promise((res) => { const t = d.transaction('h', 'readwrite'); value === undefined ? t.objectStore('h').delete(key) : t.objectStore('h').put(value, key); t.oncomplete = res; t.onerror = res; }); } catch {}
 }
 
@@ -37,6 +37,11 @@ function call(msg, transfer = []) {
   }
   return new Promise((res, rej) => { const id = ++seq; waiting.set(id, { res, rej }); worker.postMessage({ ...msg, id }, transfer); });
 }
+
+// ---------- Word, PowerPoint and Excel files are notes too: officenote.js does those ----------
+const isOfficePath = (p) => /\.(docx|pptx|xlsx)$/i.test(p || '');
+let officeMod = null;
+const office = () => import('./officenote.js').then((m) => (officeMod = m));
 
 // ---------- ids ----------
 export const pdfId = pdfIdOf;
@@ -64,6 +69,7 @@ async function fileState(path, lm, size) {
  * @returns the note, with the PDF pages as pictures on a locked bottom layer (drawn in the background; see renderPages)
  */
 export async function openPdfNote({ id, path, folderId, lm, size }) {
+  if (isOfficePath(path)) return (await office()).openOfficeNote({ id, path, folderId, lm, size });
   await (flushing.get(id) || Promise.resolve()).catch(() => {});   // closed a moment ago: let that write finish first
   if (flushing.has(id)) { lm = undefined; size = undefined; }
   const file = await store.openDocument(path);
@@ -139,6 +145,7 @@ export async function openPdfNote({ id, path, folderId, lm, size }) {
  * the ones on screen first. Returns false if stopped (stop() → true).
  */
 export async function renderPages(note, order, onPage, stop = () => false) {
+  if (note.docType) return true;   // Word / PowerPoint / Excel: the pages are drawn already
   const o = openDocs.get(note.id);
   if (!o) return;
   const lib = await loadPdfJs();
@@ -182,6 +189,7 @@ function blobUrl(id, blob) {
 }
 
 export function closePdfNote(id) {
+  officeMod?.closeOfficeNote(id);
   for (const u of urls.get(id) || []) URL.revokeObjectURL(u);
   urls.delete(id);
   const o = openDocs.get(id);
@@ -215,6 +223,7 @@ function editableData(note) {
 const timers = new Map();
 /** Keep the edits on the device now; write the PDF after a pause. */
 export async function stagePdfNote(note, onSaved) {
+  if (note.docType) return (await office()).stageOfficeNote(note, onSaved);
   const o = openDocs.get(note.id);
   if (!o) return;
   await kvSet(`journal:${o.path}`, { lm: o.lm, size: o.size, json: editableData(note), at: Date.now() });
@@ -224,9 +233,10 @@ export async function stagePdfNote(note, onSaved) {
 
 const flushing = new Map();
 /** Resolves once any write of this note into its PDF has finished (e.g. right after closing it). */
-export const settled = (id) => (flushing.get(id) || Promise.resolve()).catch(() => {});
+export const settled = (id) => Promise.all([(flushing.get(id) || Promise.resolve()).catch(() => {}), officeMod?.settled(id)]).then(() => {});
 /** Write the PDF now (if there are edits not in it yet). */
 export function flushPdfNote(note) {
+  if (note.docType) return office().then((m) => m.flushOfficeNote(note));
   clearTimeout(timers.get(note.id));
   const prev = flushing.get(note.id) || Promise.resolve();
   const p = prev.catch(() => {}).then(() => writePdf(note));
@@ -375,6 +385,7 @@ async function addedPdfs(note) {
 
 /** A thumbnail of page 1 (with the writing) and the page count, for the library. */
 export async function pdfThumb(path) {
+  if (isOfficePath(path)) return (await office()).officeThumb(path);
   const file = await store.openDocument(path);
   const lib = await loadPdfJs();
   const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
@@ -393,6 +404,7 @@ export async function pdfThumb(path) {
 
 /** Forget what the device cached about a PDF (after it was deleted, renamed or moved). */
 export async function forgetPdf(path) {
+  if (isOfficePath(path)) return (await office()).forgetOffice(path);
   for (const k of ['pdfstate', 'pdfdata', 'journal']) await kvSet(`${k}:${path}`, undefined);
 }
 

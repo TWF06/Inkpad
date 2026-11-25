@@ -186,8 +186,16 @@ export async function importFiles(files, folderId = null) {
   let openId = null;
   const images = files.filter(isImage);
   const pdfs = files.filter(isPdf);
-  // Word, PowerPoint, Excel, text…: made into a PDF here, then opened like any PDF
-  const docs = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f) && isDocument(f));
+  // Word, PowerPoint and Excel files are notes themselves (officenote.js): kept in the folder and opened as they are,
+  // so your writing is saved into that same file
+  const office = files.filter((f) => /\.(docx|pptx|xlsx)$/i.test(f.name));
+  for (const f of office) {
+    const path = await keepCopy(f, folderId);
+    if (path) openId ??= store.idForPath(path);
+    else toast(`Couldn’t put ${f.name} in the notes folder`, 4000);
+  }
+  // other documents (text, Markdown, CSV, web pages, older formats Office can still open…): made into a PDF here
+  const docs = files.filter((f) => !isPdf(f) && !isImage(f) && !isBackup(f) && isDocument(f) && !office.includes(f));
   for (const f of docs) {
     try { pdfs.push(await convertDocument(f)); }
     catch (e) { console.error(e); toast(`Couldn’t open ${f.name}${e?.message && !/^Could/.test(e.message) ? ` — ${e.message}` : ''}`, 5000); }

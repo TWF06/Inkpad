@@ -6,6 +6,13 @@
 // PowerPoint, Excel, CSV, Markdown, text, HTML: read here (OOXML is a zip of XML files, read with JSZip).
 import { toast } from './ui.js';
 
+// Word, PowerPoint and Excel files can also *be* notes (officenote.js): Inkpad then writes your writing into them as
+// pictures with this name, and adds pages of its own (marked as below). Drawing the document for Inkpad leaves all
+// of those out: the editor shows the editable writing on top instead.
+export const INK_NAME = 'Inkpad ink';
+export const INK_MARK = '00494E4B';            // w:rsidRDefault of Word paragraphs Inkpad added (a page of its own)
+export const ADDED_PART = /\/(slide|sheet)Inkpad\d+\.xml$/i;   // PowerPoint slides / Excel sheets Inkpad added
+
 const MAX_PAGES = 150; // like PDFs: more than this makes a note slow and can run out of memory on a tablet
 const RES = 2200; // pixels on a page's long side: sharp when zoomed in on a tablet, light enough to keep
 const A4 = { w: 794, h: 1123 }; // CSS px
@@ -52,46 +59,92 @@ export const oldFormatHelp = (f) => `${f.name} is an older file type Inkpad can�
  * onProgress(i, n) is called before each page is drawn.
  */
 export async function documentToPdf(file, onProgress = () => {}) {
-  const kind = docKind(file);
-  if (!kind) throw new Error(`Can’t read ${file.name}`);
   const base = file.name.replace(/\.[^.]+$/, '') || 'Document';
+  const { pages } = await documentPages(file, onProgress);
   const { PDFDocument } = await import('../vendor/pdf-lib/pdf-lib.esm.min.js');
   const pdf = await PDFDocument.create();
   pdf.setTitle(base);
   pdf.setProducer('Inkpad');
-  const addPage = async ({ bytes, w, h }) => {
+  for (const { bytes, w, h } of pages) {
     const im = await pdf.embedJpg(bytes);
     // CSS px are 1/96 in, PDF points 1/72 in: an A4 page here is an A4 page in the PDF
     const page = pdf.addPage([w * 0.75, h * 0.75]);
     page.drawImage(im, { x: 0, y: 0, width: w * 0.75, height: h * 0.75 });
-  };
+  }
+  const bytes = await pdf.save();
+  return new File([bytes], `${base}.pdf`, { type: 'application/pdf', lastModified: Date.now() });
+}
+
+/**
+ * A document → its pages as JPEG pictures, plus where each page comes from in the file, so writing done on a page
+ * can be put back into the file in the right place (officenote.js):
+ *   pages: [{ bytes, w, h, at }]   at = { part } (a slide) or { flow, s, e, top } (a stretch of a Word section /
+ *                                  an Excel sheet: flow px s…e, shown from `top` px down the page)
+ *   geo:   { kind, paras: [{ flow, top }] (Word: every paragraph, in order), flows: [{ part, table }] (Excel) }
+ */
+export async function documentPages(file, onProgress = () => {}) {
+  const kind = docKind(file);
+  if (!kind) throw new Error(`Can’t read ${file.name}`);
   let total = 0;
+  const out = [], geo = { kind, paras: [], flows: [] };
   const frame = makeFrame();
   try {
     let pages;
     if (kind === 'slides') {
       const slides = await slidePages(file);
-      pages = slides.map((s) => ({ draw: () => rasterize(fixedMarkup(s), s.w, s.h), w: s.w, h: s.h }));
+      pages = slides.map((s) => ({ draw: () => rasterize(fixedMarkup(s), s.w, s.h), at: { part: s.part } }));
     } else {
       const flows = await buildFlows(kind, file, frame.doc);
       await settle(frame.doc);
       pages = [];
-      for (const fl of flows) {
+      flows.forEach((fl, fi) => {
         prepareFlow(fl);
-        for (const [s, e] of paginate(fl)) pages.push({ draw: () => rasterize(sliceMarkup(fl, s, e), fl.w, fl.h), w: fl.w, h: fl.h });
-      }
+        measureFlow(fl, fi, geo);
+        for (const [s, e] of paginate(fl)) pages.push({ draw: () => rasterize(sliceMarkup(fl, s, e), fl.w, fl.h), at: { flow: fi, s, e, top: fl.top } });
+      });
     }
     total = pages.length;
     if (!total) throw new Error(`${file.name} is empty`);
     const n = Math.min(total, MAX_PAGES);
     for (let i = 0; i < n; i++) {
       onProgress(i + 1, n);
-      await addPage(await pages[i].draw());
+      out.push({ ...(await pages[i].draw()), at: pages[i].at });
     }
   } finally { frame.remove(); }
   if (total > MAX_PAGES) toast(`${file.name} has ${total} pages; opened the first ${MAX_PAGES}. Split it into parts to get the rest.`, 6000);
-  const bytes = await pdf.save();
-  return new File([bytes], `${base}.pdf`, { type: 'application/pdf', lastModified: Date.now() });
+  return { pages: out, geo };
+}
+
+/** Where a flow's paragraphs (Word) or table rows and columns (Excel) are, in flow px. */
+function measureFlow(fl, fi, geo) {
+  const el = fl.el, box = el.getBoundingClientRect();
+  if (geo.kind === 'word') {
+    for (const p of el.querySelectorAll('p')) geo.paras.push({ flow: fi, top: p.getBoundingClientRect().top - box.top });
+    return;
+  }
+  if (geo.kind !== 'sheet') return;
+  const table = el.querySelector('table.sheet');
+  let t = null;
+  if (table) {
+    const tb = table.getBoundingClientRect();
+    const rows = [...table.rows].map((tr) => { const r = tr.getBoundingClientRect(); return [r.top - box.top, r.bottom - box.top]; });
+    // column edges from cells one column wide (merged cells span several)
+    const widths = [...table.querySelectorAll('col')].map((c) => parseFloat(c.style.width) || 64);
+    const cols = widths.map(() => null), occ = [];
+    [...table.rows].slice(0, 300).forEach((tr, r) => {
+      let c = 0;
+      for (const td of tr.cells) {
+        while (occ[r]?.[c]) c++;
+        for (let dr = 0; dr < (td.rowSpan || 1); dr++) for (let dc = 0; dc < (td.colSpan || 1); dc++) (occ[r + dr] ??= [])[c + dc] = 1;
+        if ((td.colSpan || 1) === 1 && c < cols.length && !cols[c]) { const b = td.getBoundingClientRect(); cols[c] = [b.left - box.left, b.right - box.left]; }
+        c += td.colSpan || 1;
+      }
+    });
+    let x = tb.left - box.left;
+    for (let c = 0; c < cols.length; c++) { cols[c] ??= [x, x + widths[c]]; x = cols[c][1]; }
+    t = { left: tb.left - box.left, top: tb.top - box.top, rows, cols };
+  }
+  geo.flows[fi] = { part: fl.part || null, table: t };
 }
 
 // ---------- drawing pages ----------
@@ -203,7 +256,7 @@ const DOC_CSS = `
 
 async function buildFlows(kind, file, doc) {
   if (kind === 'word') return wordFlows(file, doc);
-  if (kind === 'sheet') return (await sheetHtml(file)).map(({ html }) => htmlFlow(doc, html, { cls: 'dc' }));
+  if (kind === 'sheet') return (await sheetHtml(file)).map(({ html, part }) => Object.assign(htmlFlow(doc, html, { cls: 'dc' }), { part }));
   const text = await readText(file);
   if (kind === 'csv' || kind === 'tsv') return [htmlFlow(doc, tableHtml(parseCsv(text, kind === 'tsv' ? '\t' : guessSep(text)), 'csv'), {})];
   if (kind === 'markdown') return [htmlFlow(doc, markdown(text), {})];
@@ -239,7 +292,7 @@ async function wordFlows(file, doc) {
   const lib = await loadDocx();
   const styles = doc.createElement('div'), holder = doc.createElement('div');
   doc.body.append(styles, holder);
-  await lib.renderAsync(await file.arrayBuffer(), holder, styles, {
+  await lib.renderAsync(await withoutInkpad(await file.arrayBuffer()), holder, styles, {
     className: 'docx', inWrapper: false, ignoreWidth: false, ignoreHeight: false, ignoreFonts: true,
     breakPages: true, ignoreLastRenderedPageBreak: true, renderHeaders: false, renderFooters: false,
     renderFootnotes: true, renderEndnotes: true, renderComments: false, renderChanges: false,
@@ -263,6 +316,23 @@ async function wordFlows(file, doc) {
   if (!flows.length) throw new Error('No pages in this Word file');
   return flows;
 }
+
+/** A Word file without what Inkpad put into it (its writing pictures and its own pages): the document alone. */
+async function withoutInkpad(buf) {
+  const JSZip = await loadZip();
+  let z;
+  try { z = await JSZip.loadAsync(buf); } catch { return buf; }
+  const f = z.file('word/document.xml');
+  const xml = f && (await f.async('string'));
+  if (!xml || (!xml.includes(INK_NAME) && !xml.includes(INK_MARK))) return buf;
+  const d = new DOMParser().parseFromString(xml, 'application/xml');
+  if (d.getElementsByTagName('parsererror').length) return buf;
+  for (const p of all(d, 'p')) if (attr(p, 'rsidRDefault') === INK_MARK) p.remove();
+  for (const pr of all(d, 'docPr')) if (attr(pr, 'name') === INK_NAME) climb(pr, 'r')?.remove();
+  z.file('word/document.xml', new XMLSerializer().serializeToString(d));
+  return z.generateAsync({ type: 'arraybuffer' });
+}
+const climb = (el, name) => { for (let e = el; e; e = e.parentElement) if (e.localName === name) return e; return null; };
 
 /** Measure a flow: widen it for wide content, then find where pages may break and where pictures are. */
 function prepareFlow(fl) {
@@ -458,7 +528,7 @@ async function sheetHtml(file) {
   const out = [];
   for (const s of sheets) {
     const p = await z.part(wb.rel(rid(s, 'id')));
-    if (!p) continue;
+    if (!p || ADDED_PART.test(p.path)) continue;   // a page Inkpad added: not part of the document itself
     const cells = new Map();
     let maxR = -1, maxC = -1, cut = false;
     for (const c of all(p.doc, 'c')) {
@@ -514,7 +584,7 @@ async function sheetHtml(file) {
       html += '</table>';
       if (cut) html += `<p><i>Only the first ${MAX_ROWS} rows and ${MAX_COLS} columns are shown.</i></p>`;
     }
-    out.push({ name: attr(s, 'name'), html });
+    out.push({ name: attr(s, 'name'), html, part: p.path });
   }
   if (!out.length) throw new Error(`${file.name} has no sheets`);
   return out;
@@ -721,12 +791,12 @@ async function slidePages(file) {
   const out = [];
   for (const s of all(pres.doc, 'sldId')) {
     const slide = await z.part(pres.rel(rid(s, 'id')));
-    if (!slide || attr(slide.doc, 'show') === '0') continue;
+    if (!slide || attr(slide.doc, 'show') === '0' || ADDED_PART.test(slide.path)) continue;
     const layout = await z.part(slide.relType('slideLayout'));
     const master = await z.part(layout?.relType('slideMaster'));
     const theme = await z.part(master?.relType('theme'));
     const ctx = makeCtx(z, theme, master, slide, defText);
-    out.push({ html: await slideHtml(ctx, slide, layout, master, W, H), w: W, h: H });
+    out.push({ html: await slideHtml(ctx, slide, layout, master, W, H), w: W, h: H, part: slide.path });
   }
   return out;
 }
@@ -941,7 +1011,7 @@ function customPath(geom, w, h, fillC, stroke, sw, ln) {
 
 async function picture(S, c, p, isTemplate, X) {
   const nv = c.children[0];
-  if (attr(kid(nv, 'cNvPr'), 'hidden') === '1') return '';
+  if (attr(kid(nv, 'cNvPr'), 'hidden') === '1' || attr(kid(nv, 'cNvPr'), 'name') === INK_NAME) return '';
   const ph = path(nv, 'nvPr', 'ph');
   if (ph && isTemplate) return '';
   const inh = inherited(S, p, ph);

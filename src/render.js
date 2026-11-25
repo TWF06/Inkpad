@@ -26,6 +26,15 @@ let useClock = 0, exact = 0;
 // every open editor (two with split screen) redraws when a picture it waits for has loaded
 const assetListeners = new Set();
 const onAssetLoad = () => { for (const fn of assetListeners) fn(); };
+/** Resolves once these pictures have loaded, so a page drawn for saving or exporting has all of them. */
+export function preloadImages(srcs) {
+  return Promise.all([...new Set(srcs)].map((src) => {
+    getImage(src);
+    const im = images.get(src)?.im;
+    if (!im || (im.complete && im.naturalWidth)) return null;
+    return new Promise((res) => { im.addEventListener('load', res, { once: true }); im.addEventListener('error', res, { once: true }); });
+  }));
+}
 /** Call fn whenever a picture finishes loading; returns a function that stops it. */
 export function addAssetListener(fn) { assetListeners.add(fn); return () => assetListeners.delete(fn); }
 const canDecode = typeof createImageBitmap === 'function';
@@ -411,17 +420,17 @@ export function drawTemplate(ctx, note, rect, a4) {
  * Draw one page (template + layered elements) in page-local coordinates.
  * opts.view: visible rect (page-local) for culling / infinite template; opts.exclude: Set of ids; opts.linkRects: out array.
  */
-export function drawPage(ctx, note, page, { view, exclude, linkRects } = {}) {
+export function drawPage(ctx, note, page, { view, exclude, linkRects, inkOnly } = {}) {
   if (page.tpl && TEMPLATES[page.tpl]) note = { ...note, template: page.tpl };
   const a4 = note.kind === 'a4';
   const rect = a4 ? { x: 0, y: 0, ...pageSize(page) } : view;
   ctx.save();
-  ctx.fillStyle = paperOf(note).bg;
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  // inkOnly: just the writing, on a transparent page (no paper, no document underneath)
+  if (!inkOnly) { ctx.fillStyle = paperOf(note).bg; ctx.fillRect(rect.x, rect.y, rect.w, rect.h); }
   if (a4) { ctx.beginPath(); ctx.rect(0, 0, rect.w, rect.h); ctx.clip(); }
-  drawTemplate(ctx, note, rect, a4);
+  if (!inkOnly) drawTemplate(ctx, note, rect, a4);
   for (const layer of note.layers) {
-    if (!layer.visible) continue;
+    if (!layer.visible || (inkOnly && layer.bg)) continue;
     const els = page.elements.filter((e) => e.layerId === layer.id && !exclude?.has(e.id) && (!view || intersects(bounds(e), view)));
     for (const e of els) if (e.tool === 'highlighter') drawElement(ctx, e, linkRects);
     for (const e of els) if (e.tool !== 'highlighter') drawElement(ctx, e, linkRects);
@@ -430,7 +439,7 @@ export function drawPage(ctx, note, page, { view, exclude, linkRects } = {}) {
 }
 
 /** Render a page to a standalone canvas at a given scale (thumbnails, export). */
-export function renderPageCanvas(note, i, { scale = 1, maxW, maxH, pad = 40 } = {}) {
+export function renderPageCanvas(note, i, { scale = 1, maxW, maxH, pad = 40, inkOnly = false } = {}) {
   const page = note.pages[i];
   let r = { x: 0, y: 0, ...pageSize(page) };
   if (note.kind !== 'a4') {
@@ -446,7 +455,7 @@ export function renderPageCanvas(note, i, { scale = 1, maxW, maxH, pad = 40 } = 
   ctx.scale(scale, scale);
   ctx.translate(-r.x, -r.y);
   exact++;
-  try { drawPage(ctx, note, page, { view: r }); } finally { exact--; }
+  try { drawPage(ctx, note, page, { view: r, inkOnly }); } finally { exact--; }
   return c;
 }
 
