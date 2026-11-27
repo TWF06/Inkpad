@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
     highlighter: { color: '#facc15', width: 20 },
     eraser: { width: 20 },
     text: { color: '#1f2937', width: 18 },
+    lasso: { color: '#2563eb' },   // the colour Recolor applies to a selection
   },
   widths: { pen: [1.5, 2.5, 5], highlighter: [12, 20, 32], eraser: [10, 20, 44], text: [14, 18, 28] },
   wsel: {},           // which size preset of each tool is in use; dragging the size slider changes that preset
@@ -716,7 +717,7 @@ export async function openEditor(root, noteId, app, opts = {}) {
       const k = s === 'bigger' ? 1.2 : 1 / 1.2;
       mutateSelection((x) => (x.type === 'image' ? { ...x, w: x.w * k, h: x.h * k } : { ...x, size: Math.max(8, Math.round(x.size * k)), w: x.w * k }));
     }
-    if (s.startsWith('row') || s.startsWith('col')) mutateSelection((t) => {
+    if (/^(row|col)[+-]$/.test(s)) mutateSelection((t) => {   // not 'color', which also starts with 'col'
       const cells = t.cells.map((r) => r.slice());
       let { rowH, colW } = t;
       if (s === 'row+') { rowH = [...rowH, 36]; cells.push(colW.map(() => '')); }
@@ -905,7 +906,10 @@ export async function openEditor(root, noteId, app, opts = {}) {
     if (!settings.palette.includes(e.target.value)) settings.palette = [...settings.palette.slice(0, 7), e.target.value];
     saveSettings();
   });
-  el.querySelector('.colors').addEventListener('change', () => updateToolbar());
+  el.querySelector('.colors').addEventListener('change', (e) => {
+    if (e.target.type === 'color' && selection) { const c = e.target.value; mutateSelection((x) => ('color' in x ? { ...x, color: c } : x)); buildSelbar(); requestFrame(); }
+    updateToolbar();
+  });
   const titleInput = el.querySelector('.title-input');
   if (note.pdf) { titleInput.readOnly = true; titleInput.title = note.pdf; }
   titleInput.addEventListener('change', () => { note.title = titleInput.value.trim() || 'Untitled'; titleInput.value = note.title; scheduleSave(); panels.refresh(); });
