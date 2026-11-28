@@ -92,7 +92,9 @@ export async function renderLibrary(root, app, folderId = null) {
   }
 
   const pathOf = (id) => { const out = [], seen = new Set(); while (id && byId.has(id) && !seen.has(id)) { seen.add(id); out.unshift(byId.get(id)); id = byId.get(id).parentId; } return out; };
-  const children = (pid) => folders.filter((f) => (f.parentId ?? null) === pid).sort((a, b) => a.name.localeCompare(b.name));
+  // A→Z, numbers in order ("Lecture 2" before "Lecture 10"), ignoring case
+  const byName = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  const children = (pid) => folders.filter((f) => (f.parentId ?? null) === pid).sort((a, b) => byName(a.name, b.name));
   const descendants = (id) => { const s = new Set([id]); let grew = true; while (grew) { grew = false; for (const f of folders) if (s.has(f.parentId) && !s.has(f.id)) { s.add(f.id); grew = true; } } return s; };
 
   async function reload() {
@@ -160,9 +162,9 @@ export async function renderLibrary(root, app, folderId = null) {
     const grid = el.querySelector('.grid');
     grid.innerHTML = '';
     const q = query.trim().toLowerCase();
-    const subfolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : children(folderId);
+    const subfolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)).sort((a, b) => byName(a.name, b.name)) : children(folderId);
     const list = (q ? notes.filter((n) => n.title.toLowerCase().includes(q) || noteText(n).toLowerCase().includes(q)) : notes.filter((n) => (n.folderId ?? null) === folderId))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => byName(a.title, b.title));
 
     for (const f of subfolders) {
       const count = notes.filter((n) => n.folderId === f.id).length + folders.filter((x) => x.parentId === f.id).length + docs.filter((d) => d.folderId === f.id).length;
@@ -220,7 +222,7 @@ export async function renderLibrary(root, app, folderId = null) {
     }
 
     // PDFs, pictures and documents in the notes folder (and its subfolders) that haven't been opened yet
-    const shownDocs = docs.filter((d) => (q ? d.name.toLowerCase().includes(q) : (d.folderId ?? null) === folderId));
+    const shownDocs = docs.filter((d) => (q ? d.name.toLowerCase().includes(q) : (d.folderId ?? null) === folderId)).sort((a, b) => byName(a.name, b.name));
     for (const d of shownDocs) {
       const mb = d.size / 1048576;
       const card = h(`<div class="card note doc">
